@@ -1,0 +1,11 @@
+{
+  "offset": 1440,
+  "updated_at": "2026-02-11T20:17:16Z",
+  "bucket": "trevor-shared-photo-stream",
+  "photos_prefix": "photos/",
+  "limit": 50,
+  "photos_prefixes": [
+    "photos/"
+  ],
+  "exclude_prefixes": []
+}

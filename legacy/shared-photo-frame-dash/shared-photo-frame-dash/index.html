@@ -1,0 +1,489 @@
+<!DOCTYPE html> <html lang="en"> <head>
+    <meta charset="UTF-8"> <meta name="viewport" 
+    content="width=device-width, initial-scale=1.0"> 
+    <title>Photo Stream Dashboard</title> <style>
+        * {
+            margin: 0; padding: 0; box-sizing: 
+            border-box;
+        } ```
+    body {
+        font-family: -apple-system, 
+BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, 
+Ubuntu, Cantarell, sans-serif;
+        background: #f5f5f5; padding: 20px;
+    }
+
+    .container {
+        max-width: 1400px; margin: 0 auto;
+    }
+
+    header {
+        background: white; padding: 20px; 
+        border-radius: 8px; margin-bottom: 20px; 
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    h1 {
+        color: #333; margin-bottom: 10px;
+    }
+
+    .stats {
+        color: #666; font-size: 14px;
+    }
+
+    .controls {
+        background: white; padding: 20px; 
+        border-radius: 8px; margin-bottom: 20px; 
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+        display: flex; gap: 15px; flex-wrap: wrap; 
+        align-items: center;
+    }
+
+    .upload-zone {
+        flex: 1; min-width: 300px; border: 2px dashed 
+        #ccc; border-radius: 8px; padding: 30px; 
+        text-align: center; cursor: pointer; 
+        transition: all 0.3s;
+    }
+
+    .upload-zone:hover, .upload-zone.drag-over {
+        border-color: #007bff; background: #f0f8ff;
+    }
+
+    .upload-zone input[type="file"] {
+        display: none;
+    }
+
+    .search-box {
+        flex: 1; min-width: 200px;
+    }
+
+    .search-box input {
+        width: 100%; padding: 10px; border: 1px solid 
+        #ddd; border-radius: 4px; font-size: 14px;
+    }
+
+    .btn {
+        padding: 10px 20px; border: none; 
+        border-radius: 4px; cursor: pointer; 
+        font-size: 14px; transition: all 0.3s;
+    }
+
+    .btn-primary {
+        background: #007bff; color: white;
+    }
+
+    .btn-primary:hover {
+        background: #0056b3;
+    }
+
+    .btn-danger {
+        background: #dc3545; color: white;
+    }
+
+    .btn-danger:hover {
+        background: #c82333;
+    }
+
+    .btn:disabled {
+        opacity: 0.5; cursor: not-allowed;
+    }
+
+    .gallery {
+        display: grid; grid-template-columns: 
+        repeat(auto-fill, minmax(250px, 1fr)); gap: 
+        20px;
+    }
+
+    .photo-card {
+        background: white; border-radius: 8px; 
+        overflow: hidden; box-shadow: 0 2px 4px 
+        rgba(0,0,0,0.1); transition: all 0.3s; 
+        cursor: pointer;
+    }
+
+    .photo-card:hover {
+        transform: translateY(-5px); box-shadow: 0 
+        4px 12px rgba(0,0,0,0.15);
+    }
+
+    .photo-card.selected {
+        outline: 3px solid #007bff;
+    }
+
+    .photo-card img {
+        width: 100%; height: 200px; object-fit: 
+        cover;
+    }
+
+    .photo-info {
+        padding: 15px;
+    }
+
+    .photo-name {
+        font-size: 14px; color: #333; word-break: 
+        break-word; margin-bottom: 5px;
+    }
+
+    .photo-size {
+        font-size: 12px; color: #999;
+    }
+
+    .loading {
+        text-align: center; padding: 40px; color: 
+        #666;
+    }
+
+    .error {
+        background: #f8d7da; color: #721c24; padding: 
+        15px; border-radius: 4px; margin-bottom: 
+        20px;
+    }
+
+    .success {
+        background: #d4edda; color: #155724; padding: 
+        15px; border-radius: 4px; margin-bottom: 
+        20px;
+    }
+
+    .modal {
+        display: none; position: fixed; top: 0; left: 
+        0; width: 100%; height: 100%; background: 
+        rgba(0,0,0,0.9); z-index: 1000; align-items: 
+        center; justify-content: center;
+    }
+
+    .modal.active {
+        display: flex;
+    }
+
+    .modal img {
+        max-width: 90%; max-height: 90%; object-fit: 
+        contain;
+    }
+
+    .modal-close {
+        position: absolute; top: 20px; right: 20px; 
+        color: white; font-size: 30px; cursor: 
+        pointer;
+    }
+
+    .progress-bar {
+        width: 100%; height: 4px; background: 
+        #e0e0e0; border-radius: 2px; overflow: 
+        hidden; margin-top: 10px;
+    }
+
+    .progress-fill {
+        height: 100%; background: #007bff; 
+        transition: width 0.3s;
+    } </style> ``` </head> <body> <div 
+    class="container">
+        <header>
+            <h1>📸 Photo Stream Dashboard</h1> <div 
+            class="stats">
+                <span 
+id="photoCount">Loading...</span>
+            </div>
+        </header> ```
+    <div id="messageArea"></div>
+
+    <div class="controls">
+        <div class="upload-zone" id="uploadZone">
+            <input type="file" id="fileInput" 
+multiple accept="image/*">
+            <p>📤 Drag & drop photos here or click to 
+browse</p>
+            <p style="font-size: 12px; color: #999; 
+margin-top: 5px;">Supports multiple files</p>
+        </div>
+
+        <div class="search-box">
+            <input type="text" id="searchInput" 
+placeholder="🔍 Search photos...">
+        </div>
+
+        <button class="btn btn-primary" 
+id="refreshBtn">↻ Refresh</button>
+        <button class="btn btn-danger" id="deleteBtn" 
+disabled>🗑️ Delete Selected</button>
+    </div>
+
+    <div id="gallery" class="gallery"></div>
+
+    <div class="modal" id="modal">
+        <span class="modal-close" 
+id="modalClose">×</span>
+        <img id="modalImage" src="" alt="Full size">
+    </div> </div> <script 
+src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1691.0/aws-sdk.min.js"></script> 
+<script>
+    // ============================================ 
+    // AWS CONFIGURATION - ADD YOUR CREDENTIALS HERE 
+    // ============================================ 
+    const AWS_CONFIG = {
+        accessKeyId: '', 
+        secretAccessKey: '', 
+        region: 'us-east-1', bucket: 
+        'trevor-shared-photo-stream', photosPrefix: 
+        'photos/'
+    };
+
+    // Initialize AWS SDK AWS.config.update({
+        accessKeyId: AWS_CONFIG.accessKeyId, 
+        secretAccessKey: AWS_CONFIG.secretAccessKey, 
+        region: AWS_CONFIG.region
+    });
+
+    const s3 = new AWS.S3();
+
+    // State let photos = []; let selectedPhotos = 
+    new Set(); let allPhotos = [];
+
+    // DOM Elements const gallery = 
+    document.getElementById('gallery'); const 
+    uploadZone = 
+    document.getElementById('uploadZone'); const 
+    fileInput = document.getElementById('fileInput'); 
+    const searchInput = 
+    document.getElementById('searchInput'); const 
+    refreshBtn = 
+    document.getElementById('refreshBtn'); const 
+    deleteBtn = document.getElementById('deleteBtn'); 
+    const photoCount = 
+    document.getElementById('photoCount'); const 
+    messageArea = 
+    document.getElementById('messageArea'); const 
+    modal = document.getElementById('modal'); const 
+    modalImage = 
+    document.getElementById('modalImage'); const 
+    modalClose = 
+    document.getElementById('modalClose');
+
+    // Initialize loadPhotos();
+
+    // Event Listeners 
+    uploadZone.addEventListener('click', () => 
+    fileInput.click()); 
+    fileInput.addEventListener('change', 
+    handleFileSelect); 
+    searchInput.addEventListener('input', 
+    handleSearch); 
+    refreshBtn.addEventListener('click', loadPhotos); 
+    deleteBtn.addEventListener('click', 
+    handleDelete); 
+    modalClose.addEventListener('click', () => 
+    modal.classList.remove('active')); 
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) 
+modal.classList.remove('active');
+    });
+
+    // Drag and drop 
+    uploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault(); 
+        uploadZone.classList.add('drag-over');
+    });
+
+    uploadZone.addEventListener('dragleave', () => {
+        uploadZone.classList.remove('drag-over');
+    });
+
+    uploadZone.addEventListener('drop', (e) => {
+        e.preventDefault(); 
+        uploadZone.classList.remove('drag-over'); 
+        handleFiles(e.dataTransfer.files);
+    });
+
+    // Functions async function loadPhotos() {
+        try {
+            showMessage('Loading photos...', 'info');
+
+            const params = {
+                Bucket: AWS_CONFIG.bucket, Prefix: 
+                AWS_CONFIG.photosPrefix
+            };
+
+            const data = await 
+s3.listObjectsV2(params).promise();
+                         allPhotos = 
+data.Contents(item => item.Key !== 
+AWS_CONFIG.photosPrefix) // Skip folder itself (item 
+=> ({
+                    key: item.Key, name: 
+                    item.Key.replace(AWS_CONFIG.photosPrefix, 
+                    ''), size: item.Size, 
+                    lastModified: item.LastModified
+                }));
+                         photos = 
+[...allPhotos];enderGallery(); datePhotoCount();
+            clearMessage();
+        } catch (error) {
+            showMessage('Error loading photos: ' + 
+error.message, 'error');
+        }
+    }
+
+    function renderGallery() {
+        gallery.innerHTML = '';
+
+        if (photos.length === 0) {
+            gallery.innerHTML = '<div 
+class="loading">No photos found</div>';
+            return;
+        }
+
+        photos.forEach(photo => {
+            const card = createPhotoCard(photo); 
+            gallery.appendChild(card);
+        });
+    }
+
+    function createPhotoCard(photo) {
+        const card = document.createElement('div'); 
+        card.className = 'photo-card'; 
+        card.dataset.key = photo.key;
+
+        const url = s3.getSignedUrl('getObject', {
+            Bucket: AWS_CONFIG.bucket, Key: 
+            photo.key, Expires: 3600
+        });
+
+        card.innerHTML = `
+            <img src="${url}" alt="${photo.name}" 
+loading="lazy">
+            <div class="photo-info">
+                <div 
+class="photo-name">${photo.name}</div>
+                <div 
+class="photo-size">${formatBytes(photo.size)}</div>
+            </div>
+        `;
+
+        card.addEventListener('click', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                toggleSelection(card, photo.key);
+            } else {
+                showFullImage(url);
+            }
+        });
+
+        return card;
+    }
+
+    function toggleSelection(card, key) {
+        if (selectedPhotos.has(key)) {
+            selectedPhotos.delete(key); 
+            card.classList.remove('selected');
+        } else {
+            selectedPhotos.add(key); 
+            card.classList.add('selected');
+        }
+
+        deleteBtn.disabled = selectedPhotos.size === 
+0;
+    }
+
+    function showFullImage(url) {
+        modalImage.src = url; 
+        modal.classList.add('active');
+    }
+
+    function handleFileSelect(e) {
+        handleFiles(e.target.files);
+    }
+
+    async function handleFiles(files) {
+        const fileArray = Array.from(files);
+
+        for (const file of fileArray) {
+            await uploadFile(file);
+        }
+
+        fileInput.value = ''; loadPhotos();
+    }
+
+    async function uploadFile(file) {
+        try {
+            showMessage(`Uploading ${file.name}...`, 
+'info');
+            
+            const params = {
+hotosPrefix + file.name,
+                Body: file, ContentType: file.type
+            };
+
+            await s3.upload(params).promise(); 
+            showMessage(`✓ ${file.name} uploaded 
+            successfully`, 'success');
+        } catch (error) {
+            showMessage(`Error uploading 
+${file.name}: ${error.message}`, 'error');
+        }
+    }
+
+    async function handleDelete() {
+        if (selectedPhotos.size === 0) return;
+
+        const confirmed = confirm(`Delete 
+${selectedPhotos.size} photo(s)?`);
+        if (!confirmed) return;
+
+        try {
+            showMessage('Deleting photos...', 
+'info');
+            >>> >>> for (const key of selectedPhotos) 
+{.deleteObject({ romise();
+            }
+
+            showMessage(`✓ Deleted 
+${selectedPhotos.size} photo(s)`, 'success');
+            selectedPhotos.clear(); 
+            deleteBtn.disabled = true; loadPhotos();
+        } catch (error) {
+            showMessage('Error deleting photos: ' + 
+error.message, 'error');
+        }
+    }
+
+    function handleSearch() {
+        const term = searchInput.value.toLowerCase();
+
+        if (!term) {
+            photos = [...allPhotos];
+        } else {
+            photos = allPhotos.filter(photo =>
+                
+photo.name.toLowerCase().includes(term)
+            );
+        }
+
+        renderGallery();
+    }
+
+    function updatePhotoCount() {
+        photoCount.textContent = `${photos.length} 
+photo(s) in stream`;
+    }
+
+    function showMessage(text, type) {
+        const className = type === 'error' ? 'error' 
+: type === 'success' ? 'success' : 'loading';
+        messageArea.innerHTML = `<div 
+class="${className}">${text}</div>`;
+    }
+
+    function clearMessage() {
+        setTimeout(() => {
+            messageArea.innerHTML = '';
+        }, 3000);
+    }
+
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 Bytes'; const k = 
+        1024; const sizes = ['Bytes', 'KB', 'MB', 
+        'GB']; const i = Math.floor(Math.log(bytes) / 
+        Math.log(k)); return Math.round(bytes / 
+        Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    } </script> ``` </body>
+</html>

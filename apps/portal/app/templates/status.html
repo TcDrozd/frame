@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Status</h1>
+
+<div class="grid">
+  <section class="card">
+    <h2>Library</h2>
+    <div>Active photos in DB: <strong>{{ count_active }}</strong></div>
+    <div>Bucket: <code>{{ bucket }}</code></div>
+    <div>Manifest key: <code>{{ manifest_key }}</code></div>
+  </section>
+
+  <section class="card">
+    <h2>Settings</h2>
+    <div>limit: <code>{{ settings.limit }}</code></div>
+    <div>shuffle_mode: <code>{{ settings.shuffle_mode }}</code></div>
+    <div>mode: <code>{{ settings.mode }}</code></div>
+    <div>start_epoch: <code>{{ settings.start_epoch }}</code></div>
+    <div class="row">
+      <form hx-post="/api/publish" hx-trigger="submit" hx-swap="none" class="inline">
+        <button type="submit">Publish now</button>
+      </form>
+      <span class="hint">(runs the publisher script)</span>
+    </div>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Last publish run</h2>
+  {% if last_run %}
+    <div>id: <code>{{ last_run.id }}</code></div>
+    <div>success: <strong>{{ "yes" if last_run.success else "no" }}</strong></div>
+    <div>started: <code>{{ last_run.started_at }}</code></div>
+    <div>finished: <code>{{ last_run.finished_at }}</code></div>
+    <div>manifest etag: <code>{{ last_run.manifest_etag }}</code></div>
+    {% if last_run.error_text %}
+      <pre class="pre">{{ last_run.error_text }}</pre>
+    {% endif %}
+  {% else %}
+    <div class="hint">No publish runs yet.</div>
+  {% endif %}
+</section>
+{% endblock %}

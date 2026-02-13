@@ -1,0 +1,32 @@
+[Unit]
+Description=Photo Frame Publisher API
+After=network.target
+
+[Service]
+Type=simple
+User=tcd
+Group=tcd
+WorkingDirectory=/home/tcd/shared-photo-frame/publisher
+
+# Adjust the path to your Flask app
+
+ExecStart=/home/tcd/shared-photo-frame/publisher/venv/bin/python app.py
+
+# Restart policy
+
+Restart=always
+RestartSec=10
+
+# Security settings
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Logging
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=photo-publisher
+
+[Install]
+WantedBy=multi-user.target

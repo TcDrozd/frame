@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Settings</h1>
+
+<form method="post" action="dashboard/settings" class="card">
+  <label>Limit</label>
+  <input name="limit" type="number" value="{{ settings.limit }}" min="1" max="500" />
+
+  <label>Shuffle mode</label>
+  <select name="shuffle_mode">
+    <option value="none" {{ "selected" if settings.shuffle_mode=="none" else "" }}>none</option>
+    <option value="random" {{ "selected" if settings.shuffle_mode=="random" else "" }}>random</option>
+    <option value="daily" {{ "selected" if settings.shuffle_mode=="daily" else "" }}>daily</option>
+  </select>
+
+  <label>Mode</label>
+  <select name="mode">
+    <option value="inventory" {{ "selected" if settings.mode=="inventory" else "" }}>inventory</option>
+    <option value="sync" {{ "selected" if settings.mode=="sync" else "" }}>sync</option>
+  </select>
+
+  <label>Start epoch</label>
+  <select name="start_epoch">
+    <option value="now" {{ "selected" if settings.start_epoch=="now" else "" }}>now</option>
+    <option value="fixed" {{ "selected" if settings.start_epoch=="fixed" else "" }}>fixed</option>
+  </select>
+
+  <hr />
+
+  <label>Include prefixes (CSV or one per line)</label>
+  <textarea name="include_prefixes" rows="4" placeholder="photos/04_phone_modern/
+photos/05_named_curated/">{{ settings.include_prefixes or "" }}</textarea>
+
+  <label>Exclude prefixes (CSV or one per line)</label>
+  <textarea name="exclude_prefixes" rows="4" placeholder="photos/99_review/">{{ settings.exclude_prefixes or "" }}</textarea>
+
+  <label>Default upload prefix</label>
+  <input name="default_upload_prefix" type="text" value="{{ settings.default_upload_prefix or "" }}" placeholder="photos/04_phone_modern/2026/" />
+  <p class="hint">Used by the Portal upload flow. Should end with a trailing slash.</p>
+
+  <button type="submit">Save</button>
+</form>
+
+<p class="hint">These settings map to publisher flags in <code>app/services/publish_service.py</code>.</p>
+{% endblock %}

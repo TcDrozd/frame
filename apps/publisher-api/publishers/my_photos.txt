@@ -1,0 +1,6 @@
+photos/IMG_0290.jpeg
+photos/IMG_0317.jpeg
+photos/IMG_0327.jpeg
+photos/IMG_0399.jpeg
+# This is a comment and will be ignored
+photos/IMG_0403.jpeg

@@ -1,0 +1,97 @@
+<!DOCTYPE html> <html lang="en"> <head>
+  <meta charset="UTF-8" /> <meta name="viewport" 
+  content="width=device-width, initial-scale=1.0"/> 
+  <title>Photo Stream Dashboard</title> <style>
+    * { margin:0; padding:0; box-sizing:border-box; } 
+    body { font-family: -apple-system, 
+    BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, 
+    Ubuntu, Cantarell, sans-serif; 
+    background:#f5f5f5; padding:20px; } .container { 
+    max-width: 1400px; margin: 0 auto; } header { 
+    background:white; padding:20px; 
+    border-radius:8px; margin-bottom:20px; 
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1); } h1 { 
+    color:#333; margin-bottom:10px; } .stats { 
+    color:#666; font-size:14px; } .controls { 
+    background:white; padding:20px; 
+    border-radius:8px; margin-bottom:20px; 
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+    display:flex; gap:15px; flex-wrap:wrap; 
+    align-items:center; } .upload-zone { flex:1; 
+    min-width:300px; border:2px dashed #ccc; 
+    border-radius:8px; padding:30px; 
+    text-align:center; cursor:pointer; transition: 
+    all 0.3s; } .upload-zone:hover, 
+    .upload-zone.drag-over { border-color:#007bff; 
+    background:#f0f8ff; } .upload-zone 
+    input[type="file"] { display:none; } .search-box 
+    { flex:1; min-width:200px; } .search-box input { 
+    width:100%; padding:10px; border:1px solid #ddd; 
+    border-radius:4px; font-size:14px; } .btn { 
+    padding:10px 20px; border:none; 
+    border-radius:4px; cursor:pointer; 
+    font-size:14px; transition: all 0.3s; } 
+    .btn-primary { background:#007bff; color:white; } 
+    .btn-primary:hover { background:#0056b3; } 
+    .btn-danger { background:#dc3545; color:white; } 
+    .btn-danger:hover { background:#c82333; } 
+    .btn:disabled { opacity:0.5; cursor:not-allowed; 
+    } .gallery { display:grid; grid-template-columns: 
+    repeat(auto-fill, minmax(250px, 1fr)); gap:20px; 
+    } .photo-card { background:white; 
+    border-radius:8px; overflow:hidden; box-shadow:0 
+    2px 4px rgba(0,0,0,0.1); transition: all 0.3s; 
+    cursor:pointer; } .photo-card:hover { transform: 
+    translateY(-5px); box-shadow: 0 4px 12px 
+    rgba(0,0,0,0.15); } .photo-card.selected { 
+    outline: 3px solid #007bff; } .photo-card img { 
+    width:100%; height:200px; object-fit:cover; } 
+    .photo-info { padding:15px; } .photo-name { 
+    font-size:14px; color:#333; 
+    word-break:break-word; margin-bottom:5px; } 
+    .photo-size { font-size:12px; color:#999; } 
+    .loading { text-align:center; padding:40px; 
+    color:#666; } .error { background:#f8d7da; 
+    color:#721c24; padding:15px; border-radius:4px; 
+    margin-bottom:20px; } .success { 
+    background:#d4edda; color:#155724; padding:15px; 
+    border-radius:4px; margin-bottom:20px; } .modal { 
+    display:none; position:fixed; top:0; left:0; 
+    width:100%; height:100%; background: 
+    rgba(0,0,0,0.9); z-index:1000; 
+    align-items:center; justify-content:center; } 
+    .modal.active { display:flex; } .modal img { 
+    max-width:90%; max-height:90%; 
+    object-fit:contain; } .modal-close { 
+    position:absolute; top:20px; right:20px; 
+    color:white; font-size:30px; cursor:pointer; }
+  </style> </head> <body> <div class="container">
+    <header>
+      <h1>📸 Photo Stream Dashboard</h1> <div 
+      class="stats"><span 
+      id="photoCount">Loading...</span></div>
+    </header> <div id="messageArea"></div> <div 
+    class="controls">
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" id="fileInput" multiple 
+accept="image/*" />
+        <p>📤 Drag & drop photos here or click to 
+browse</p>
+        <p style="font-size: 12px; color: #999; 
+margin-top: 5px;">Supports multiple files</p>
+      </div> <div class="search-box">
+        <input type="text" id="searchInput" 
+placeholder="🔍 Search photos..." />
+      </div> <button class="btn btn-primary" 
+      id="refreshBtn">↻ Refresh</button> <button 
+      class="btn btn-danger" id="deleteBtn" 
+      disabled>🗑️ Delete Selected</button>
+    </div> <div id="gallery" class="gallery"></div> 
+    <div class="modal" id="modal">
+      <span class="modal-close" 
+id="modalClose">×</span>
+      <img id="modalImage" src="" alt="Full size" />
+    </div>
+  </div> <script src="/static/app.js"></script> 
+</body>
+</html>

@@ -1,0 +1,112 @@
+# =========================
+# OS / Editor junk
+# =========================
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+*.swp
+*.swo
+*~
+*.tmp
+
+# VS Code / JetBrains
+.vscode/
+.idea/
+*.iml
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+*.log
+
+# Local env files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# Virtualenvs (repo-local)
+venv/
+.venv/
+
+# =========================
+# Node / Frontend
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+dist/
+build/
+.cache/
+.parcel-cache/
+
+# =========================
+# SQLite / local data
+# =========================
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# =========================
+# App-specific: portal
+# Keep local dev DBs out of git
+# =========================
+apps/portal/data/
+apps/portal/instance/
+apps/portal/.env
+apps/portal/.env.*
+
+# Alembic bytecode caches (shouldn't exist, but ignore if they do)
+apps/portal/alembic/__pycache__/
+apps/portal/app/__pycache__/
+apps/portal/scripts/__pycache__/
+
+# =========================
+# App-specific: publisher-api
+# =========================
+apps/publisher-api/var/
+apps/publisher-api/.env
+apps/publisher-api/.env.*
+
+# =========================
+# Runtime directories (never live in repo)
+# If you ever accidentally copy /opt into the repo, don't commit it
+# =========================
+opt/
+runtime/
+var/
+venv/
+
+# =========================
+# Archives / backups
+# =========================
+*.bak
+*.old
+*.tgz
+*.tar.gz
+*.zip

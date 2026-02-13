@@ -1,0 +1,60 @@
+# ======================
+# Python / Virtualenv
+# ======================
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# ======================
+# Environment / Secrets
+# ======================
+.env
+.env.*
+!.env.example
+
+# ======================
+# Database / Runtime Data
+# ======================
+data/
+*.db
+*.sqlite
+*.sqlite3
+.publish_state.json
+
+# ======================
+# Alembic
+# ======================
+alembic/versions/*.pyc
+
+# ======================
+# Logs / Temp
+# ======================
+*.log
+tmp/
+.cache/
+
+# ======================
+# OS / Editor
+# ======================
+.DS_Store
+.AppleDouble
+.LSOverride
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ======================
+# Build / Packaging
+# ======================
+build/
+dist/
+*.egg-info/
+
+# ======================
+# Docker (optional)
+# ======================
+docker-compose.override.yml

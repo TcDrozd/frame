@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Login</h1>
+{% if request.query_params.get('error') %}
+<div class="error">Invalid username or password</div>
+{% endif %}
+<form method="post" action="login" class="card">
+  <label>Username</label>
+  <input name="username" autocomplete="username" />
+  <label>Password</label>
+  <input type="password" name="password" autocomplete="current-password" />
+  <button type="submit">Login</button>
+</form>
+<p class="hint">Tailscale-only access recommended for now.</p>
+{% endblock %}

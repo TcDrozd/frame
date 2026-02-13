@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Gallery (latest 200)</h1>
+
+<section class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Uploaded</th>
+        <th>Filename</th>
+        <th>S3 key</th>
+        <th>Active</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for p in photos %}
+      <tr>
+        <td><code>{{ p.uploaded_at }}</code></td>
+        <td>{{ p.original_filename or "" }}</td>
+        <td><code>{{ p.s3_key }}</code></td>
+        <td>{{ "yes" if p.active else "no" }}</td>
+        <td class="actions">
+          <button hx-post="/api/photos/{{ p.id }}/pin-now" hx-swap="none">Pin now</button>
+          <button hx-post="/api/photos/{{ p.id }}/bump" hx-swap="none">Bump</button>
+          <button hx-post="/api/photos/{{ p.id }}/hide" hx-swap="none">Hide</button>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
