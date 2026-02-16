@@ -5,18 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ app_name if app_name else "Portal" }}</title>
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-    <link rel="stylesheet" href="/static/portal.css" />
+    <link rel="stylesheet" href="{{ request.url_for('static', path='portal.css') }}" />
   </head>
   <body>
     <header class="topbar">
       <div class="brand">🖼️ {{ app_name if app_name else "Shared Photo Frame Portal" }}</div>
       {% if user %}
       <nav class="nav">
-        <a href="/dashboard/status">Status</a>
-        <a href="/portal/upload">Upload</a>
-        <a href="/gallery">Gallery</a>
-        <a href="/dashboard/settings">Settings</a>
-        <form method="post" action="logout" class="logout">
+        <a href="{{ request.url_for('status') }}">Status</a>
+        <a href="{{ request.url_for('upload_page') }}">Upload</a>
+        <a href="{{ request.url_for('gallery') }}">Gallery</a>
+        <a href="{{ request.url_for('settings_page') }}">Settings</a>
+        <form method="post" action="{{ request.url_for('logout') }}" class="logout">
           <button type="submit">Logout</button>
         </form>
       </nav>

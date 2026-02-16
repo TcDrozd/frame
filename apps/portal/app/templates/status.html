@@ -17,7 +17,7 @@
     <div>mode: <code>{{ settings.mode }}</code></div>
     <div>start_epoch: <code>{{ settings.start_epoch }}</code></div>
     <div class="row">
-      <form hx-post="/api/publish" hx-trigger="submit" hx-swap="none" class="inline">
+      <form hx-post="{{ request.url_for('publish_now') }}" hx-trigger="submit" hx-swap="none" class="inline">
         <button type="submit">Publish now</button>
       </form>
       <span class="hint">(runs the publisher script)</span>

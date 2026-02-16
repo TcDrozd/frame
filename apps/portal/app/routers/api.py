@@ -21,7 +21,7 @@ def _require_user(request: Request, db: Session):
         raise PermissionError("unauthorized")
     return user
 
-@router.post("/uploads/presign")
+@router.post("/uploads/presign", name="presign_upload")
 def presign_upload(request: Request, payload: dict, db: Session = Depends(get_db)):
     user = _require_user(request, db)
     original_filename = payload.get("filename")
@@ -33,7 +33,7 @@ def presign_upload(request: Request, payload: dict, db: Session = Depends(get_db
     presigned = s3_service.presign_post(key=key, content_type=content_type)
     return {"key": key, "presigned": presigned}
 
-@router.post("/uploads/complete")
+@router.post("/uploads/complete", name="upload_complete")
 def upload_complete(request: Request, payload: dict, db: Session = Depends(get_db)):
     user = _require_user(request, db)
     key = payload["key"]
@@ -67,7 +67,7 @@ def upload_complete(request: Request, payload: dict, db: Session = Depends(get_d
 
     return {"ok": True, "photo_id": photo.id, "published": bool(run), "publish_run_id": getattr(run, "id", None)}
 
-@router.post("/photos/{photo_id}/pin-now")
+@router.post("/photos/{photo_id}/pin-now", name="pin_now")
 def pin_now(photo_id: int, request: Request, db: Session = Depends(get_db)):
     user = _require_user(request, db)
     photo = db.query(Photo).filter(Photo.id == photo_id).first()
@@ -81,7 +81,7 @@ def pin_now(photo_id: int, request: Request, db: Session = Depends(get_db)):
     run = publish(db)
     return {"ok": True, "publish_run_id": run.id}
 
-@router.post("/photos/{photo_id}/bump")
+@router.post("/photos/{photo_id}/bump", name="bump")
 def bump(photo_id: int, request: Request, db: Session = Depends(get_db)):
     user = _require_user(request, db)
     photo = db.query(Photo).filter(Photo.id == photo_id).first()
@@ -95,7 +95,7 @@ def bump(photo_id: int, request: Request, db: Session = Depends(get_db)):
     run = publish(db)
     return {"ok": True, "publish_run_id": run.id}
 
-@router.post("/photos/{photo_id}/hide")
+@router.post("/photos/{photo_id}/hide", name="hide")
 def hide(photo_id: int, request: Request, db: Session = Depends(get_db)):
     user = _require_user(request, db)
     photo = db.query(Photo).filter(Photo.id == photo_id).first()
@@ -107,7 +107,7 @@ def hide(photo_id: int, request: Request, db: Session = Depends(get_db)):
     run = publish(db)
     return {"ok": True, "publish_run_id": run.id}
 
-@router.post("/publish")
+@router.post("/publish", name="publish_now")
 def publish_now(request: Request, db: Session = Depends(get_db)):
     user = _require_user(request, db)
     run = publish(db)

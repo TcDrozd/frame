@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     # AWS / S3
     AWS_REGION: str = "us-east-1"
     S3_BUCKET: str = "trevor-shared-photo-stream"
-    PHOTOS_PREFIX: str = "photos/original/"
+    PHOTOS_PREFIX: str = "photos/"
     MANIFEST_KEY: str = "manifest.json"
 
     # Publisher script

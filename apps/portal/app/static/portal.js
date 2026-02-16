@@ -14,8 +14,15 @@ function log(msg) {
 }
 
 async function uploadOne(file) {
+  const api = window.PORTAL_API || {};
+  const presignUrl = api.presignUpload;
+  const completeUrl = api.completeUpload;
+  if (!presignUrl || !completeUrl) {
+    throw new Error("Upload API endpoints are not configured on this page.");
+  }
+
   log(`Presigning: ${file.name}`);
-  const presign = await apiPost("/api/uploads/presign", {
+  const presign = await apiPost(presignUrl, {
     filename: file.name,
     content_type: file.type || "image/jpeg",
   });
@@ -34,7 +41,7 @@ async function uploadOne(file) {
   }
 
   log(`Recording upload complete`);
-  const done = await apiPost("/api/uploads/complete", {
+  const done = await apiPost(completeUrl, {
     key,
     filename: file.name,
   });

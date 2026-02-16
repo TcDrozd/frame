@@ -2,7 +2,7 @@
 {% block content %}
 <h1>Settings</h1>
 
-<form method="post" action="dashboard/settings" class="card">
+<form method="post" action="{{ request.url_for('settings_save') }}" class="card">
   <label>Limit</label>
   <input name="limit" type="number" value="{{ settings.limit }}" min="1" max="500" />
 

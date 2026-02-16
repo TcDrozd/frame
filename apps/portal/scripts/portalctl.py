@@ -52,6 +52,21 @@ def cmd_seed_admin(args: argparse.Namespace) -> int:
     finally:
         db.close()
 
+def cmd_reset_password(args: argparse.Namespace) -> int:
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == args.username).first()
+        if not user:
+            print(f"User {args.username} not found.")
+            return 1
+
+        user.password_hash = hash_password(args.password)
+        db.commit()
+        print(f"Password updated for user: {args.username}")
+        return 0
+    finally:
+        db.close()
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="portalctl")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -66,6 +81,11 @@ def main() -> int:
     p_seed.add_argument("--username", required=True)
     p_seed.add_argument("--password", required=True)
     p_seed.set_defaults(func=cmd_seed_admin)
+
+    p_reset = sub.add_parser("reset-password")
+    p_reset.add_argument("--username", required=True)
+    p_reset.add_argument("--password", required=True)
+    p_reset.set_defaults(func=cmd_reset_password)
 
     args = parser.parse_args()
     return args.func(args)

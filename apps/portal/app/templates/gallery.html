@@ -21,9 +21,9 @@
         <td><code>{{ p.s3_key }}</code></td>
         <td>{{ "yes" if p.active else "no" }}</td>
         <td class="actions">
-          <button hx-post="/api/photos/{{ p.id }}/pin-now" hx-swap="none">Pin now</button>
-          <button hx-post="/api/photos/{{ p.id }}/bump" hx-swap="none">Bump</button>
-          <button hx-post="/api/photos/{{ p.id }}/hide" hx-swap="none">Hide</button>
+          <button hx-post="{{ request.url_for('pin_now', photo_id=p.id) }}" hx-swap="none">Pin now</button>
+          <button hx-post="{{ request.url_for('bump', photo_id=p.id) }}" hx-swap="none">Bump</button>
+          <button hx-post="{{ request.url_for('hide', photo_id=p.id) }}" hx-swap="none">Hide</button>
         </td>
       </tr>
     {% endfor %}

@@ -4,7 +4,7 @@
 {% if request.query_params.get('error') %}
 <div class="error">Invalid username or password</div>
 {% endif %}
-<form method="post" action="login" class="card">
+<form method="post" action="{{ request.url_for('login') }}" class="card">
   <label>Username</label>
   <input name="username" autocomplete="username" />
   <label>Password</label>

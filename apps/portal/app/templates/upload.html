@@ -9,5 +9,11 @@
   <pre id="log" class="pre"></pre>
 </section>
 
-<script src="/static/portal.js"></script>
+<script>
+  window.PORTAL_API = {
+    presignUpload: "{{ request.url_for('presign_upload') }}",
+    completeUpload: "{{ request.url_for('upload_complete') }}",
+  };
+</script>
+<script src="{{ request.url_for('static', path='portal.js') }}"></script>
 {% endblock %}
