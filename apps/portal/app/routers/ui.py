@@ -19,6 +19,7 @@ from ..config import settings
 
 templates = Jinja2Templates(directory="app/templates")
 router = APIRouter()
+GALLERY_PAGE_SIZE = 40
 
 # -------- helpers --------
 
@@ -53,6 +54,38 @@ def _redirect_to_login(request: Request) -> RedirectResponse:
 
 def _redirect_to_status(request: Request) -> RedirectResponse:
     return _redirect("status", request=request)
+
+
+def _child_prefixes(keys: list[str], current_prefix: str) -> list[str]:
+    out: set[str] = set()
+    for key in keys:
+        if not key.startswith(current_prefix):
+            continue
+        remainder = key[len(current_prefix) :]
+        parts = remainder.split("/", 1)
+        if len(parts) > 1 and parts[0]:
+            out.add(f"{current_prefix}{parts[0]}/")
+    return sorted(out)
+
+
+def _parent_prefix(prefix: str) -> str:
+    cleaned = prefix.strip("/")
+    if not cleaned:
+        return ""
+    parts = cleaned.split("/")
+    if len(parts) == 1:
+        return ""
+    return "/".join(parts[:-1]) + "/"
+
+
+def _preview_kind(photo: Photo) -> str | None:
+    ctype = (photo.content_type or "").lower()
+    key = (photo.s3_key or "").lower()
+    if ctype.startswith("image/") or key.endswith((".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".heic", ".heif", ".tif", ".tiff")):
+        return "image"
+    if ctype.startswith("video/") or key.endswith((".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm")):
+        return "video"
+    return None
 
 # -------- routes --------
 
@@ -131,21 +164,65 @@ def gallery(
     synced: int = 0,
     scanned: int = 0,
     sync_error: str | None = None,
+    page: int = 1,
+    prefix: str | None = None,
 ):
     user = _require_user(request, db)
     if not user:
         return _redirect_to_login(request)
 
-    photos = db.query(Photo).order_by(Photo.uploaded_at.desc()).limit(200).all()
+    safe_page = max(1, page)
+    default_prefix = settings.PHOTOS_PREFIX if settings.PHOTOS_PREFIX.endswith("/") else f"{settings.PHOTOS_PREFIX}/"
+    current_prefix = (prefix or default_prefix).strip()
+    if current_prefix and not current_prefix.endswith("/"):
+        current_prefix += "/"
+
+    base = db.query(Photo)
+    if current_prefix:
+        base = base.filter(Photo.s3_key.like(f"{current_prefix}%"))
+
+    total = base.count()
+    offset = (safe_page - 1) * GALLERY_PAGE_SIZE
+    photos = (
+        base.order_by(Photo.uploaded_at.desc())
+        .offset(offset)
+        .limit(GALLERY_PAGE_SIZE)
+        .all()
+    )
+    photo_cards = []
+    for p in photos:
+        preview = None
+        kind = _preview_kind(p)
+        if kind:
+            try:
+                preview = s3_service.presign_get(p.s3_key, expires_seconds=1800)
+            except Exception:
+                preview = None
+        photo_cards.append({"photo": p, "preview_url": preview, "preview_kind": kind})
+
+    keys_for_prefixes = [k for (k,) in base.with_entities(Photo.s3_key).all()]
+    folders = _child_prefixes(keys_for_prefixes, current_prefix=current_prefix)
+    has_prev = safe_page > 1
+    has_next = offset + len(photos) < total
+
     return templates.TemplateResponse(
         "gallery.html",
         {
             "request": request,
             "user": user,
+            "photo_cards": photo_cards,
             "photos": photos,
             "synced": synced,
             "scanned": scanned,
             "sync_error": sync_error,
+            "page": safe_page,
+            "page_size": GALLERY_PAGE_SIZE,
+            "total": total,
+            "has_prev": has_prev,
+            "has_next": has_next,
+            "current_prefix": current_prefix,
+            "parent_prefix": _parent_prefix(current_prefix),
+            "folders": folders,
         },
     )
 

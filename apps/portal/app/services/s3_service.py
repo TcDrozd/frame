@@ -74,6 +74,14 @@ def presign_post(key: str, content_type: str | None, max_bytes: int = 25_000_000
         ExpiresIn=expires_seconds,
     )
 
+
+def presign_get(key: str, expires_seconds: int = 3600) -> str:
+    return _s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": settings.S3_BUCKET, "Key": key},
+        ExpiresIn=expires_seconds,
+    )
+
 def head_object(key: str) -> Dict[str, Any]:
     return _s3.head_object(Bucket=settings.S3_BUCKET, Key=key)
 

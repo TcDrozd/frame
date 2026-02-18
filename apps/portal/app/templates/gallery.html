@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Gallery (latest 200)</h1>
+<h1>Gallery</h1>
 
 <section class="card">
   <div class="row">
@@ -9,6 +9,23 @@
     </form>
     <span class="hint">Imports missing media keys from S3 into the portal DB.</span>
   </div>
+  <form method="get" action="{{ request.url_for('gallery') }}" class="row" style="margin-top:10px;">
+    <input name="prefix" type="text" value="{{ current_prefix }}" placeholder="photos/" />
+    <button type="submit">Browse Prefix</button>
+  </form>
+  <div class="row" style="margin-top:10px;">
+    <a href="{{ request.url_for('gallery') }}?prefix={{ parent_prefix }}">Up one folder</a>
+    <span class="hint">Current prefix: <code>{{ current_prefix }}</code></span>
+    <span class="hint">Total in scope: <strong>{{ total }}</strong></span>
+  </div>
+  {% if folders %}
+    <div style="margin-top:10px;">
+      <strong>Folders</strong>:
+      {% for f in folders %}
+        <a href="{{ request.url_for('gallery') }}?prefix={{ f }}">{{ f }}</a>{% if not loop.last %} · {% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
   {% if scanned %}
     <div class="hint">Last sync scanned <strong>{{ scanned }}</strong> media objects and imported <strong>{{ synced }}</strong>.</div>
   {% endif %}
@@ -18,31 +35,46 @@
 </section>
 
 <section class="card">
-  <table class="table">
-    <thead>
-      <tr>
-        <th>Uploaded</th>
-        <th>Filename</th>
-        <th>S3 key</th>
-        <th>Active</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-    {% for p in photos %}
-      <tr>
-        <td><code>{{ p.uploaded_at }}</code></td>
-        <td>{{ p.original_filename or "" }}</td>
-        <td><code>{{ p.s3_key }}</code></td>
-        <td>{{ "yes" if p.active else "no" }}</td>
-        <td class="actions">
+  <div class="row" style="justify-content:space-between;">
+    <div class="hint">Page {{ page }} ({{ page_size }} per page)</div>
+    <div class="row">
+      {% if has_prev %}
+        <a href="{{ request.url_for('gallery') }}?prefix={{ current_prefix }}&page={{ page - 1 }}">Previous</a>
+      {% endif %}
+      {% if has_next %}
+        <a href="{{ request.url_for('gallery') }}?prefix={{ current_prefix }}&page={{ page + 1 }}">Next</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px;">
+    {% for item in photo_cards %}
+      {% set p = item.photo %}
+      <article class="card" style="margin:0;">
+        {% if item.preview_url and item.preview_kind == "image" %}
+          <img src="{{ item.preview_url }}" alt="{{ p.original_filename or p.s3_key }}" style="width:100%; height:220px; object-fit:cover; border-radius:8px;" loading="lazy" />
+        {% elif item.preview_url and item.preview_kind == "video" %}
+          <video src="{{ item.preview_url }}" controls preload="metadata" style="width:100%; height:220px; object-fit:cover; border-radius:8px;"></video>
+        {% else %}
+          <div class="hint" style="height:220px; display:flex; align-items:center; justify-content:center; border:1px dashed #273552; border-radius:8px;">
+            Preview unavailable
+          </div>
+        {% endif %}
+
+        <div style="margin-top:10px;">
+          <div><strong>{{ p.original_filename or "Unnamed" }}</strong></div>
+          <div class="hint"><code>{{ p.s3_key }}</code></div>
+          <div class="hint">uploaded: <code>{{ p.uploaded_at }}</code></div>
+          <div class="hint">active: <strong>{{ "yes" if p.active else "no" }}</strong></div>
+        </div>
+
+        <div class="actions" style="margin-top:10px;">
           <button hx-post="{{ request.url_for('pin_now', photo_id=p.id) }}" hx-swap="none">Pin now</button>
           <button hx-post="{{ request.url_for('bump', photo_id=p.id) }}" hx-swap="none">Bump</button>
           <button hx-post="{{ request.url_for('hide', photo_id=p.id) }}" hx-swap="none">Hide</button>
-        </td>
-      </tr>
+        </div>
+      </article>
     {% endfor %}
-    </tbody>
-  </table>
+  </div>
 </section>
 {% endblock %}
