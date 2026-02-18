@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from ..db import get_db
 from ..auth import get_current_user, verify_password, make_session_token, COOKIE_NAME
@@ -13,6 +14,7 @@ from ..models.user import User
 from ..models.photo import Photo
 from ..models.publish_run import PublishRun
 from ..services.settings_service import get_effective_settings, set_setting
+from ..services import s3_service
 from ..config import settings
 
 templates = Jinja2Templates(directory="app/templates")
@@ -123,13 +125,77 @@ def upload_page(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("upload.html", {"request": request, "user": user})
 
 @router.get("/gallery", response_class=HTMLResponse, name="gallery")
-def gallery(request: Request, db: Session = Depends(get_db)):
+def gallery(
+    request: Request,
+    db: Session = Depends(get_db),
+    synced: int = 0,
+    scanned: int = 0,
+    sync_error: str | None = None,
+):
     user = _require_user(request, db)
     if not user:
         return _redirect_to_login(request)
 
     photos = db.query(Photo).order_by(Photo.uploaded_at.desc()).limit(200).all()
-    return templates.TemplateResponse("gallery.html", {"request": request, "user": user, "photos": photos})
+    return templates.TemplateResponse(
+        "gallery.html",
+        {
+            "request": request,
+            "user": user,
+            "photos": photos,
+            "synced": synced,
+            "scanned": scanned,
+            "sync_error": sync_error,
+        },
+    )
+
+
+@router.post("/gallery/sync-s3", name="gallery_sync_s3")
+def gallery_sync_s3(request: Request, db: Session = Depends(get_db)):
+    user = _require_user(request, db)
+    if not user:
+        return _redirect_to_login(request)
+
+    eff = get_effective_settings(db)
+    include, exclude = s3_service.get_gallery_prefixes(
+        include_raw=eff.get("include_prefixes"),
+        exclude_raw=eff.get("exclude_prefixes"),
+    )
+    existing_keys = {k for (k,) in db.query(Photo.s3_key).all()}
+    scanned = 0
+    synced = 0
+
+    try:
+        for obj in s3_service.list_media_objects(include, exclude):
+            scanned += 1
+            if obj.key in existing_keys:
+                continue
+            photo = Photo(
+                s3_key=obj.key,
+                original_filename=obj.key.rsplit("/", 1)[-1],
+                etag=obj.etag,
+                size_bytes=obj.size,
+                content_type=None,
+                uploaded_by="s3-sync",
+                active=True,
+            )
+            db.add(photo)
+            try:
+                db.commit()
+                existing_keys.add(obj.key)
+                synced += 1
+            except IntegrityError:
+                db.rollback()
+    except Exception as exc:  # noqa: BLE001
+        return _redirect_with_query(
+            "gallery",
+            request=request,
+            synced=synced,
+            scanned=scanned,
+            sync_error=f"s3_sync_failed:{exc}",
+        )
+
+    return _redirect_with_query("gallery", request=request, synced=synced, scanned=scanned)
 
 @router.get("/dashboard/settings", response_class=HTMLResponse, name="settings_page")
 def settings_page(request: Request, db: Session = Depends(get_db)):

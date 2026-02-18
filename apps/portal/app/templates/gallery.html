@@ -3,6 +3,21 @@
 <h1>Gallery (latest 200)</h1>
 
 <section class="card">
+  <div class="row">
+    <form method="post" action="{{ request.url_for('gallery_sync_s3') }}" class="inline">
+      <button type="submit">Sync from S3</button>
+    </form>
+    <span class="hint">Imports missing media keys from S3 into the portal DB.</span>
+  </div>
+  {% if scanned %}
+    <div class="hint">Last sync scanned <strong>{{ scanned }}</strong> media objects and imported <strong>{{ synced }}</strong>.</div>
+  {% endif %}
+  {% if sync_error %}
+    <div class="error">{{ sync_error }}</div>
+  {% endif %}
+</section>
+
+<section class="card">
   <table class="table">
     <thead>
       <tr>
