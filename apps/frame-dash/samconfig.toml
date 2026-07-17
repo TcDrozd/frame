@@ -1,0 +1,39 @@
+# SAM CLI configuration. POST-CUTOVER: this is a single stack and it IS
+# production — [default] pins ManifestKey=manifest.json so a plain
+# `sam deploy` can't silently repoint the schedule at the dev key.
+# Dev-key testing: deploy with
+#   sam deploy --parameter-overrides ManifestKey=manifest.dev.json
+# (and flip back!), or publish with a dry_run instead.
+version = 0.1
+
+[default.global.parameters]
+stack_name = "frame-dash"
+region = "us-east-1"
+# Must deploy into the account that owns the photo bucket (084683516815).
+# frame-dash-deploy is a dedicated least-privilege user (see deploy-policy.json).
+profile = "frame-dash-deploy"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
+confirm_changeset = true
+fail_on_empty_changeset = false
+parameter_overrides = "ManifestKey=manifest.json"
+
+[prod]
+[prod.global.parameters]
+stack_name = "frame-dash"
+region = "us-east-1"
+profile = "frame-dash-deploy"
+
+[prod.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
+confirm_changeset = true
+fail_on_empty_changeset = false
+# The only difference from dev: publish to the LIVE manifest the frames poll.
+parameter_overrides = "ManifestKey=manifest.json"

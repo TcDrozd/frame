@@ -51,16 +51,44 @@ There are no build steps, frameworks, or dependencies.
 
 The client consumes **one input**: a `manifest.json` served over HTTP(S).
 
-Minimal required structure:
+Schema 2 (current, produced by `apps/frame-dash`) — a strict superset of
+schema 1, so schema-1 clients keep working unchanged:
 
 ```json
 {
-  "schema": 1,
-  "version": "v2025-12-26",
-  "generated_at": "2025-12-26T15:00:00Z",
-  "mode": "inventory",
-  "slide_seconds": 3600,
+  "schema": 2,
+  "version": "v20260101-000000Z",
+  "generated_at": "2026-01-01T00:00:00Z",
+  "mode": "sync",
+  "slide_seconds": 1380,
+  "start_epoch": 1750000000,
+  "url_expires_at": 1757776000,
   "photos": [
-    { "id": "IMG_1234.jpg", "url": "https://..." }
+    {
+      "id": "IMG_1234.jpg",
+      "url": "https://...",
+      "name": "IMG 1234",
+      "bytes": 123456,
+      "key": "photos/2026/trip/IMG_1234.jpg",
+      "etag": "abc123"
+    }
   ]
 }
+```
+
+Schema-1 fields (`schema`, `version`, `generated_at`, `mode`,
+`slide_seconds`, `photos[].id`, `photos[].url`, plus `start_epoch` when
+`mode == "sync"`) must never change name or type. Schema-2 additions:
+
+- `photos[].key` — full S3 key; preferred cache identity (`id` is the
+  basename and collides across folders)
+- `photos[].etag` — content-change token; re-download when it changes
+- `url_expires_at` — epoch when photo URLs die; refetch the manifest
+  before then
+
+The canonical example is the golden fixture at
+`apps/frame-dash/tests/fixtures/golden_manifest.json`, pinned by
+`test_manifest_renderer.py::TestGoldenManifest`. To manually contract-check
+a client build, serve that fixture and point the client at it:
+`index.html?manifest=<url-to-fixture>` (the URLs inside won't resolve, but
+parse/sync/status behavior must not error).

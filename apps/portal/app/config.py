@@ -19,14 +19,10 @@ class Settings(BaseSettings):
     PHOTOS_PREFIX: str = "photos/"
     MANIFEST_KEY: str = "manifest.json"
 
-    # Publisher script
-    PUBLISHER_PATH: str = "tools/publish_manifest.py"
-
     # DB
     DATABASE_URL: str = "sqlite:///./data/portal.db"
 
     # Behavior
-    AUTO_PUBLISH_ON_UPLOAD: bool = True
     AUTO_BUMP_ON_UPLOAD: bool = True
     DEFAULT_BUMP_EXPIRES_HOURS: int = 24
     DEFAULT_PIN_EXPIRES_HOURS: int = 6

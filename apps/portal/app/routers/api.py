@@ -9,7 +9,6 @@ from ..auth import get_current_user
 from ..models.photo import Photo
 from ..models.pin import Pin
 from ..services import s3_service
-from ..services.publish_service import publish
 from ..config import settings
 from ..services.settings_service import get_effective_settings
 
@@ -61,11 +60,7 @@ def upload_complete(request: Request, payload: dict, db: Session = Depends(get_d
         db.add(Pin(s3_key=key, kind="priority", weight=100, created_by=user.username, expires_at=expires_at))
         db.commit()
 
-    run = None
-    if settings.AUTO_PUBLISH_ON_UPLOAD:
-        run = publish(db)
-
-    return {"ok": True, "photo_id": photo.id, "published": bool(run), "publish_run_id": getattr(run, "id", None)}
+    return {"ok": True, "photo_id": photo.id}
 
 @router.post("/photos/{photo_id}/pin-now", name="pin_now")
 def pin_now(photo_id: int, request: Request, db: Session = Depends(get_db)):
@@ -78,8 +73,7 @@ def pin_now(photo_id: int, request: Request, db: Session = Depends(get_db)):
     db.add(Pin(s3_key=photo.s3_key, kind="pin_now", weight=999, created_by=user.username, expires_at=expires_at))
     db.commit()
 
-    run = publish(db)
-    return {"ok": True, "publish_run_id": run.id}
+    return {"ok": True}
 
 @router.post("/photos/{photo_id}/bump", name="bump")
 def bump(photo_id: int, request: Request, db: Session = Depends(get_db)):
@@ -92,8 +86,7 @@ def bump(photo_id: int, request: Request, db: Session = Depends(get_db)):
     db.add(Pin(s3_key=photo.s3_key, kind="priority", weight=200, created_by=user.username, expires_at=expires_at))
     db.commit()
 
-    run = publish(db)
-    return {"ok": True, "publish_run_id": run.id}
+    return {"ok": True}
 
 @router.post("/photos/{photo_id}/hide", name="hide")
 def hide(photo_id: int, request: Request, db: Session = Depends(get_db)):
@@ -104,11 +97,4 @@ def hide(photo_id: int, request: Request, db: Session = Depends(get_db)):
     photo.active = False
     db.commit()
 
-    run = publish(db)
-    return {"ok": True, "publish_run_id": run.id}
-
-@router.post("/publish", name="publish_now")
-def publish_now(request: Request, db: Session = Depends(get_db)):
-    user = _require_user(request, db)
-    run = publish(db)
-    return {"ok": run.success, "publish_run_id": run.id, "error": run.error_text}
+    return {"ok": True}

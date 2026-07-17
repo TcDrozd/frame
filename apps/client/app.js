@@ -9,7 +9,11 @@
  * - Better on-screen debug/status (works without DevTools)
  * - ?manifest= URL override (persisted to localStorage)
  * - Manifest signature change detection
- * - Early manifest refetch hint on expired presigned URLs (403/404)
+ * - Early manifest refetch with backoff on expired photo URLs (403/404)
+ * - Fetch timeouts; online/visibility-triggered resync
+ * - Schema-2 aware: cache identity = key (falls back to id), etag-based
+ *   re-download when content changes under the same key, url_expires_at
+ *   proactive refetch
  */
 
 // ==================== CONFIG ====================
@@ -35,6 +39,16 @@ const CONFIG = {
 
   // If true, append cache-bust to manifest fetches
   NO_CACHE_MANIFEST: true,
+
+  // Fetch timeouts: a hung socket must not stall sync forever
+  MANIFEST_TIMEOUT_MS: 15 * 1000,
+  PHOTO_TIMEOUT_MS: 60 * 1000,
+
+  // Early-refetch backoff after expired photo URLs (403/404)
+  EARLY_REFETCH_BACKOFF_MS: [60 * 1000, 5 * 60 * 1000, 30 * 60 * 1000],
+
+  // Minimum gap between event-triggered syncs (online/visibility)
+  NUDGE_MIN_GAP_MS: 30 * 1000,
 };
 
 // ==================== MANIFEST URL MANAGEMENT ====================
@@ -142,9 +156,9 @@ async function metaSet(key, value) {
   });
 }
 
-async function photoPut({ id, blob, mime, name, sha256, ts }) {
+async function photoPut({ id, blob, mime, name, sha256, etag, ts }) {
   return tx(STORES.photos, "readwrite", async (s) => {
-    await idbReq(s.put({ id, blob, mime, name, sha256, ts }));
+    await idbReq(s.put({ id, blob, mime, name, sha256, etag, ts }));
   });
 }
 
@@ -181,12 +195,22 @@ function manifestSig(m) {
     startEpoch: m.startEpoch,
     slideSeconds: m.slideSeconds,
     mode: m.mode,
-    photos: (m.photos || []).map((p) => ({ id: p.id, url: p.url, sha256: p.sha256 })),
+    photos: (m.photos || []).map((p) => ({ id: p.cid || p.id, url: p.url, etag: p.etag, sha256: p.sha256 })),
   };
   return JSON.stringify(slim);
 }
 
 // ==================== MANIFEST ====================
+async function fetchWithTimeout(url, opts, timeoutMs) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchManifest() {
   const base = new URL(window.location.href);
   const manifestUrl = new URL(MANIFEST_URL, base);
@@ -195,7 +219,7 @@ async function fetchManifest() {
     ? `${manifestUrl.toString()}?t=${Date.now()}`
     : manifestUrl.toString();
 
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await fetchWithTimeout(url, { cache: "no-store" }, CONFIG.MANIFEST_TIMEOUT_MS);
   if (!res.ok) throw new Error(`manifest fetch failed: ${res.status}`);
   return res.json();
 }
@@ -211,17 +235,22 @@ function normalizeManifest(raw) {
 
   const normPhotos = photos.map((p) => ({
     id: String(p.id),
+    // Cache identity: schema-2 full key when present (basenames collide
+    // across folders), else the schema-1 id.
+    cid: String(p.key || p.id),
     url: p.url ? String(p.url) : undefined,
     name: p.name ? String(p.name) : undefined,
     sha256: p.sha256 ? String(p.sha256) : undefined,
+    etag: p.etag ? String(p.etag) : undefined,
     bytes: Number.isFinite(p.bytes) ? p.bytes : undefined,
   }));
 
   const startEpoch = raw.start_epoch != null ? Number(raw.start_epoch) : undefined;
   const slideSeconds = raw.slide_seconds != null ? Number(raw.slide_seconds) : undefined;
   const mode = raw.mode ? String(raw.mode) : undefined;
+  const urlExpiresAt = raw.url_expires_at != null ? Number(raw.url_expires_at) : undefined;
 
-  return { version, photos: normPhotos, startEpoch, slideSeconds, mode };
+  return { version, photos: normPhotos, startEpoch, slideSeconds, mode, urlExpiresAt };
 }
 
 // ==================== DOWNLOAD ====================
@@ -235,14 +264,13 @@ async function downloadToCache(entry) {
   const base = new URL(window.location.href);
   const photoUrl = new URL(entry.url, base).toString();
 
-  const res = await fetch(photoUrl);
+  const res = await fetchWithTimeout(photoUrl, {}, CONFIG.PHOTO_TIMEOUT_MS);
 
   if (!res.ok) {
-    // Presigned URL expired or object missing: mark for early manifest check
+    // Photo URL expired or object missing: refetch the manifest early
+    // (with backoff) instead of waiting out the hourly poll.
     if (res.status === 403 || res.status === 404) {
-      try {
-        await metaSet("force_manifest_check", Date.now());
-      } catch {}
+      scheduleEarlyRefetch(`url dead (${res.status})`);
     }
     throw new Error(`download failed ${entry.id}: ${res.status}`);
   }
@@ -251,11 +279,12 @@ async function downloadToCache(entry) {
   const mime = blob.type || "application/octet-stream";
 
   await photoPut({
-    id: entry.id,
+    id: entry.cid,
     blob,
     mime,
     name: entry.name,
     sha256: entry.sha256,
+    etag: entry.etag,
     ts: Date.now(),
   });
 
@@ -284,13 +313,15 @@ async function syncCache(manifest) {
   }
 
   const cachedPhotos = await photoGetAll();
-  const cachedIds = new Set(cachedPhotos.map((p) => p.id));
-  const manifestIds = new Set(manifest.photos.map((p) => p.id));
+  const cachedById = new Map(cachedPhotos.map((p) => [p.id, p]));
+  const manifestIds = new Set(manifest.photos.map((p) => p.cid));
 
-  const toDelete = cachedPhotos.filter((p) => !manifestIds.has(p.id));
-  for (const p of toDelete) await photoDelete(p.id);
-
-  const toDownload = manifest.photos.filter((p) => !cachedIds.has(p.id));
+  const toDownload = manifest.photos.filter((p) => {
+    const row = cachedById.get(p.cid);
+    if (!row) return true;
+    // Same key, different content: re-download (photoPut overwrites in place).
+    return Boolean(p.etag && row.etag && p.etag !== row.etag);
+  });
 
   let ok = 0;
   let fail = 0;
@@ -314,6 +345,11 @@ async function syncCache(manifest) {
 
   const workers = Array.from({ length: Math.min(CONCURRENCY, toDownload.length) }, () => worker());
   await Promise.all(workers);
+
+  // Delete AFTER downloads complete: a network drop mid-sync (or an id
+  // migration) must never shrink the cache below what can be replaced.
+  const toDelete = cachedPhotos.filter((p) => !manifestIds.has(p.id));
+  for (const p of toDelete) await photoDelete(p.id);
 
   await trimCache(CONFIG.MAX_CACHED);
 
@@ -366,6 +402,18 @@ function calcIndex(manifest) {
 function msUntilNext(manifest) {
   const slideMs = getSlideMs(manifest);
   const now = Date.now();
+
+  // Sync mode: slide boundaries are phased from start_epoch, matching
+  // calcIndex — otherwise frames wake at absolute-clock boundaries and
+  // drift within a slide whenever start_epoch isn't slide-aligned.
+  if (inSyncMode(manifest)) {
+    const startMs = manifest.startEpoch * 1000;
+    if (now >= startMs) {
+      const elapsed = now - startMs;
+      return slideMs - (elapsed % slideMs);
+    }
+  }
+
   const next = Math.ceil(now / slideMs) * slideMs;
   return next - now;
 }
@@ -446,7 +494,7 @@ async function showById(id) {
 async function buildPlayOrder(manifest) {
   const cached = await photoGetAll();
   const map = new Map(cached.map((p) => [p.id, p]));
-  const ordered = manifest.photos.map((p) => map.get(p.id)).filter(Boolean);
+  const ordered = manifest.photos.map((p) => map.get(p.cid || p.id)).filter(Boolean);
   return ordered.length ? ordered.map((p) => p.id) : cached.map((p) => p.id);
 }
 
@@ -485,7 +533,30 @@ async function refreshPlayback() {
 }
 
 // ==================== PERIODIC SYNC ====================
+let syncInFlight = false;
+let lastPeriodicAt = 0;
+let earlyRefetchTimer = null;
+let earlyRefetchIdx = 0;
+
+// Schedule a one-off early manifest refetch (used when photo URLs turn out
+// to be dead, and near url_expires_at). Backoff prevents a stale manifest
+// with permanently dead URLs from turning the hourly poll into a hot loop.
+function scheduleEarlyRefetch(reason, delayMs) {
+  if (earlyRefetchTimer) return;
+  const steps = CONFIG.EARLY_REFETCH_BACKOFF_MS;
+  const delay = delayMs ?? steps[Math.min(earlyRefetchIdx, steps.length - 1)];
+  if (delayMs == null) earlyRefetchIdx++;
+  earlyRefetchTimer = setTimeout(() => {
+    earlyRefetchTimer = null;
+    periodic();
+  }, delay);
+  setStatus(`sync: early refetch in ${Math.round(delay / 1000)}s (${reason})`);
+}
+
 async function periodic() {
+  if (syncInFlight) return;
+  syncInFlight = true;
+  lastPeriodicAt = Date.now();
   try {
     setStatus("sync: fetching manifest…");
     const raw = await fetchManifest();
@@ -495,12 +566,15 @@ async function periodic() {
     setStatus(`sync: parsed v${manifest.version} (${manifest.photos.length} photos)…`);
 
     const res = await syncCache(manifest);
-    if (res.changed) {
-      setStatus("playback: refreshing…");
-      await refreshPlayback();
-    } else {
-      // even if not changed, try playback from cache (safe)
-      await refreshPlayback();
+    if (!res.fail) earlyRefetchIdx = 0; // clean sync: reset recovery backoff
+    await refreshPlayback();
+
+    // If URLs die before the next hourly poll, refetch shortly before they do.
+    if (Number.isFinite(manifest.urlExpiresAt)) {
+      const msLeft = manifest.urlExpiresAt * 1000 - Date.now();
+      if (msLeft > 0 && msLeft < CONFIG.MANIFEST_POLL_MS) {
+        scheduleEarlyRefetch("urls expiring", Math.max(msLeft - 5 * 60 * 1000, 60 * 1000));
+      }
     }
   } catch (e) {
     const msg = e && e.message ? e.message : String(e);
@@ -510,7 +584,16 @@ async function periodic() {
     const last = await metaGet("last_check");
     const lastTxt = last ? new Date(last).toLocaleString() : "never";
     setStatus(`offline: ${msg} (last check ${lastTxt})`);
+  } finally {
+    syncInFlight = false;
   }
+}
+
+// Opportunistic resync when connectivity/visibility returns, instead of
+// waiting out the hourly poll. Debounced so event storms can't spam syncs.
+function nudgeSync() {
+  if (Date.now() - lastPeriodicAt < CONFIG.NUDGE_MIN_GAP_MS) return;
+  periodic();
 }
 
 // ==================== INIT ====================
@@ -531,6 +614,12 @@ async function init() {
 
     // Regular sync
     setInterval(periodic, CONFIG.MANIFEST_POLL_MS);
+
+    // Opportunistic resync on network/visibility recovery
+    window.addEventListener("online", nudgeSync);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) nudgeSync();
+    });
 
     // Best-effort wakelock
     if ("wakeLock" in navigator) {

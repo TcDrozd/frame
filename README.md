@@ -12,8 +12,8 @@ It contains **deployable apps** (portal, publisher API, client) and **legacy v1 
 
 frame/
   apps/
-    portal/            # FastAPI portal (admin UI + API)
-    publisher-api/     # Flask API that serves published content / endpoints
+    portal/            # FastAPI portal (uploads + metadata; slated for retirement)
+    frame-dash/        # serverless dashboard + THE manifest publisher (SAM)
     client/            # display client (static files)
   tools/               # helper scripts (deploy, maintenance, utilities)
   legacy/
@@ -58,10 +58,13 @@ The intent is to allow iteration on V2 without breaking the currently running V1
 
 ### Common paths
 - Portal DB (prod): `/opt/frame/var/portal/portal.db`
-- Publisher selections (prod): `/opt/frame/var/publisher-api/selections/`
 - Venvs:
   - `/opt/frame/venv/portal/`
-  - `/opt/frame/venv/publisher-api/`
+
+### Publishing
+Manifest publishing is owned by `apps/frame-dash` (serverless; see its README).
+The v1 publisher (`apps/publisher-api` + portal shell-out) was retired; a
+break-glass copy of the CLI remains at `tools/publish_manifest.py`.
 
 ---
 
