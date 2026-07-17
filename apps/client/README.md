@@ -1,7 +1,6 @@
 # Shared Photo Frame — Client
 
-**Status:** Frozen / Production  
-**Current Tag:** `client-v1`  
+**Status:** Production (v3, `app.js?v=3`)  
 **Role:** Appliance-grade slideshow client (offline-first)
 
 ---
@@ -12,7 +11,8 @@ This directory contains the **frame client** — a minimal, static web app desig
 
 The client is intentionally **dumb and stable**:
 - It does not upload photos
-- It does not manage users
+- It does not manage users or hold any credentials — photo URLs in the
+  manifest arrive pre-signed, so the client never authenticates
 - It does not generate manifests
 - It does not expose configuration or UI
 
@@ -24,12 +24,14 @@ Its only responsibility is to:
 ## Files
 
 - `index.html`  
-  Minimal container and status overlay.
+  Minimal container and status overlay. Bump the `app.js?v=N` query param
+  whenever `app.js` changes — it is the cache-buster kiosk browsers see.
 
 - `app.js`  
   All runtime logic: sync, cache, playback, error handling.
 
-There are no build steps, frameworks, or dependencies.
+There are no build steps, frameworks, or dependencies — plain browser APIs
+only (fetch, IndexedDB, DOM).
 
 ---
 
@@ -40,10 +42,34 @@ There are no build steps, frameworks, or dependencies.
 2. Begin background sync against the manifest URL
 3. Never block playback on network availability
 
+### Sync & recovery (v3)
+- Manifest polled hourly; fetches carry timeouts (15s manifest / 60s photo)
+  so a hung socket can never stall sync
+- Photo downloads that 403/404 (dead URLs) trigger an early manifest
+  refetch with 1m → 5m → 30m backoff instead of waiting out the hour
+- `url_expires_at` is honored: the manifest is refetched shortly before
+  photo URLs expire
+- `online` / `visibilitychange` events nudge a debounced resync
+- Cache identity is the schema-2 full `key` (falls back to `id`); an
+  `etag` change re-downloads the photo in place
+- Cache deletions happen only **after** replacement downloads land, so a
+  mid-sync network drop can never shrink the cache
+
 ### Offline Behavior
 - Fully offline-capable once photos are cached
-- Network failures do **not** interrupt playback
+- Network failures do **not** interrupt playback — HTTP errors (403, 404)
+  and unreachable networks take the same path: keep playing from cache
 - Sync resumes opportunistically when network returns
+
+### Synchronized playback
+In `sync` mode the slide index AND the slide boundaries are both computed
+from `start_epoch` wall-clock math, so NTP-synced frames flip together
+regardless of when each booted.
+
+### Remote reconfiguration
+Load `index.html?manifest=<url>` once and the URL persists to
+localStorage — this is how frames are repointed without touching code
+(e.g. via Fully Kiosk remote admin's Load URL).
 
 ---
 
