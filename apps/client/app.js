@@ -37,6 +37,10 @@ const CONFIG = {
   // Show debug status overlay
   DISPLAY_STATUS: true,
 
+  // Hide the overlay this long after the first photo renders. It stays up
+  // if playback never starts, so boot failures remain visible on-screen.
+  STATUS_HIDE_MS: 4000,
+
   // If true, append cache-bust to manifest fetches
   NO_CACHE_MANIFEST: true,
 
@@ -72,14 +76,26 @@ function getManifestUrl() {
 const MANIFEST_URL = getManifestUrl();
 
 // ==================== STATUS ====================
+let statusHidden = false;
+let statusHideTimer = null;
+
 function setStatus(msg) {
   try {
-    if (!CONFIG.DISPLAY_STATUS) return;
+    if (!CONFIG.DISPLAY_STATUS || statusHidden) return;
     const el = document.getElementById("status");
     if (el) el.textContent = msg;
     // Mirror in URL hash so you can see it without DevTools / share screenshot context.
     window.location.hash = encodeURIComponent(String(msg)).slice(0, 180);
   } catch {}
+}
+
+function hideStatusAfterFirstPhoto() {
+  if (statusHidden || statusHideTimer) return;
+  statusHideTimer = setTimeout(() => {
+    statusHidden = true;
+    const el = document.getElementById("status");
+    if (el) el.style.display = "none";
+  }, CONFIG.STATUS_HIDE_MS);
 }
 
 // Global error traps so "booting…" doesn't hide fatal issues on iPad
@@ -488,6 +504,7 @@ async function showById(id) {
   }, 50);
 
   currentId = id;
+  hideStatusAfterFirstPhoto();
 }
 
 // ==================== LOOP ====================

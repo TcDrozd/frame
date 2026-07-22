@@ -1,6 +1,6 @@
 # Shared Photo Frame — Client
 
-**Status:** Production (v3, `app.js?v=3`)  
+**Status:** Production (v3, `app.js?v=4`)  
 **Role:** Appliance-grade slideshow client (offline-first)
 
 ---
@@ -24,8 +24,11 @@ Its only responsibility is to:
 ## Files
 
 - `index.html`  
-  Minimal container and status overlay. Bump the `app.js?v=N` query param
-  whenever `app.js` changes — it is the cache-buster kiosk browsers see.
+  Minimal container and status overlay. The overlay shows boot/sync progress
+  and auto-hides shortly after the first photo renders (`STATUS_HIDE_MS` in
+  `app.js`); it stays visible if playback never starts, so failures remain
+  readable on-screen. Bump the `app.js?v=N` query param whenever `app.js`
+  changes — it is the cache-buster kiosk browsers see.
 
 - `app.js`  
   All runtime logic: sync, cache, playback, error handling.
