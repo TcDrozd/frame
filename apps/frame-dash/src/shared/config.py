@@ -62,3 +62,13 @@ def signed_url_ttl_seconds() -> int:
 def legacy_manifest_key() -> str:
     """Extra key every publish is mirrored to during migrations ("" = off)."""
     return os.environ.get("LEGACY_MANIFEST_KEY", "").strip()
+
+
+def auto_publish_mode() -> str:
+    """"off" = scheduled runs only refresh a curated playlist; "window" =
+    when no playlist is active, publish a daily-rotating automatic selection."""
+    return os.environ.get("AUTO_PUBLISH_MODE", "off").strip() or "off"
+
+
+def auto_window_size() -> int:
+    return int(os.environ.get("AUTO_WINDOW_SIZE", "50"))

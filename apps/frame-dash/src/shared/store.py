@@ -8,10 +8,15 @@ One table, two item shapes (see template.yaml PlaylistTable):
     pk="CONFIG",   sk="active"     playlist_id, resolved_start_epoch,
                                    last_published_at, last_version,
                                    manifest_key
+                                   — or, for auto-mode publishes: source="auto"
+                                   with photo_count/pool_count and NO
+                                   playlist_id, so the scheduled handler keeps
+                                   treating it as "no curated playlist".
 
 `resolved_start_epoch` is frozen at the first publish of a sync playlist and
 reused by the scheduled re-publish; resetting it would restart playback on
-every frame at once.
+every frame at once. Auto publishes freeze it the same way, so the daily
+window rotation never restarts playback either.
 
 All functions take a boto3 DynamoDB *Table* resource so tests can inject a
 stubbed one.
@@ -179,10 +184,13 @@ def get_active(table) -> dict[str, Any] | None:
 
 def set_active(table, playlist_id: str) -> None:
     """Point the scheduled re-publish at a playlist (publish-time fields are
-    written by record_publish)."""
+    written by record_publish). Drops any auto-mode leftovers so the pointer
+    never claims to be both curated and auto ("source" is a DynamoDB reserved
+    word, hence the name alias)."""
     table.update_item(
         Key={"pk": CONFIG_PK, "sk": ACTIVE_SK},
-        UpdateExpression="SET playlist_id = :pid",
+        UpdateExpression="SET playlist_id = :pid REMOVE #source, photo_count, pool_count",
+        ExpressionAttributeNames={"#source": "source"},
         ExpressionAttributeValues={":pid": playlist_id},
     )
 
@@ -206,6 +214,32 @@ def record_publish(
         "manifest_key": manifest_key,
         "last_version": version,
         "last_published_at": utc_now_z(),
+    }
+    if resolved_start_epoch is not None:
+        item["resolved_start_epoch"] = int(resolved_start_epoch)
+    table.put_item(Item=item)
+
+
+def record_auto_publish(
+    table,
+    *,
+    manifest_key: str,
+    version: str,
+    resolved_start_epoch: int | None,
+    photo_count: int,
+    pool_count: int,
+) -> None:
+    """Auto-mode pointer: no playlist_id, so a later curated publish simply
+    overwrites it and takes precedence."""
+    item: dict[str, Any] = {
+        "pk": CONFIG_PK,
+        "sk": ACTIVE_SK,
+        "source": "auto",
+        "manifest_key": manifest_key,
+        "last_version": version,
+        "last_published_at": utc_now_z(),
+        "photo_count": photo_count,
+        "pool_count": pool_count,
     }
     if resolved_start_epoch is not None:
         item["resolved_start_epoch"] = int(resolved_start_epoch)

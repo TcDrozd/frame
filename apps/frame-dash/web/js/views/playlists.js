@@ -55,6 +55,7 @@ export async function renderPlaylistEditor(app, playlistId) {
   }
   const status = await api.get("/api/status");
   const isActive = status.active && status.active.playlist_id === playlistId;
+  const autoOn = status.auto_publish && status.auto_publish.mode === "window";
 
   // Working copy; nothing persists until Save.
   let items = [...playlist.items];
@@ -88,7 +89,9 @@ export async function renderPlaylistEditor(app, playlistId) {
         <button id="save">Save</button>
         <button id="dry-run" class="ghost">Preview manifest JSON</button>
         <button id="publish">Publish</button>
-        <button id="toggle-active" class="ghost">${isActive ? "Clear active (pause refresh)" : "Set active"}</button>
+        <button id="toggle-active" class="ghost">${isActive
+          ? (autoOn ? "Clear active (hand back to auto)" : "Clear active (pause refresh)")
+          : "Set active"}</button>
         <button id="delete" class="danger">Delete playlist</button>
       </div>
       <pre id="preview" hidden></pre>

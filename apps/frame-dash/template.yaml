@@ -90,6 +90,23 @@ Parameters:
       migration aid so old clients keep working while frames are repointed
       to the CloudFront manifest path. Clear it after the grace period.
 
+  AutoPublishMode:
+    Type: String
+    Default: "off"
+    AllowedValues: ["off", "window"]
+    Description: >
+      "window" makes the scheduled Lambda publish an automatic selection
+      (AutoWindowSize photos interleaved across folders, membership rotated
+      daily, playback epoch preserved) whenever no curated playlist is
+      active. "off" keeps scheduled runs refresh-only. A curated publish
+      always takes precedence. In this mode ScheduleExpression is also the
+      freshness cadence — keep it daily-or-better even in cloudfront mode.
+
+  AutoWindowSize:
+    Type: Number
+    Default: 50
+    Description: Photos per automatic window when AutoPublishMode=window.
+
   CognitoDomainPrefix:
     Type: String
     Default: frame-dash-tcd
@@ -118,6 +135,8 @@ Globals:
         PRIVATE_KEY_SSM_NAME: !Ref PrivateKeySsmName
         SIGNED_URL_TTL_SECONDS: !Ref SignedUrlTtlSeconds
         LEGACY_MANIFEST_KEY: !Ref LegacyManifestKey
+        AUTO_PUBLISH_MODE: !Ref AutoPublishMode
+        AUTO_WINDOW_SIZE: !Ref AutoWindowSize
 
 Resources:
   # ------------------------------------------------------------------------

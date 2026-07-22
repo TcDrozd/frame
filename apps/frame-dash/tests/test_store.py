@@ -30,11 +30,14 @@ class FakeTable:
         self.items.pop(self._key(Key), None)
         return {}
 
-    def update_item(self, Key, UpdateExpression, ExpressionAttributeValues):
-        # Supports only the single "SET playlist_id = :pid" expression store.py uses.
-        assert UpdateExpression == "SET playlist_id = :pid"
+    def update_item(self, Key, UpdateExpression, ExpressionAttributeValues, ExpressionAttributeNames=None):
+        # Supports only the single set_active expression store.py uses.
+        assert UpdateExpression == "SET playlist_id = :pid REMOVE #source, photo_count, pool_count"
+        assert ExpressionAttributeNames == {"#source": "source"}
         item = self.items.setdefault(self._key(Key), {"pk": Key["pk"], "sk": Key["sk"]})
         item["playlist_id"] = ExpressionAttributeValues[":pid"]
+        for attr in ("source", "photo_count", "pool_count"):
+            item.pop(attr, None)
         return {}
 
     def query(self, KeyConditionExpression, ExclusiveStartKey=None):
@@ -133,6 +136,38 @@ class TestActivePointer(unittest.TestCase):
         )
         active = store.get_active(self.table)
         self.assertNotIn("resolved_start_epoch", active)
+
+    def test_record_auto_publish_has_no_playlist_id(self):
+        store.record_auto_publish(
+            self.table,
+            manifest_key="manifest.json",
+            version="v1",
+            resolved_start_epoch=1750000000,
+            photo_count=50,
+            pool_count=312,
+        )
+        active = store.get_active(self.table)
+        self.assertNotIn("playlist_id", active)
+        self.assertEqual(active["source"], "auto")
+        self.assertEqual(active["resolved_start_epoch"], 1750000000)
+        self.assertEqual(active["photo_count"], 50)
+        self.assertEqual(active["pool_count"], 312)
+
+    def test_set_active_drops_auto_fields(self):
+        store.record_auto_publish(
+            self.table,
+            manifest_key="manifest.json",
+            version="v1",
+            resolved_start_epoch=1,
+            photo_count=5,
+            pool_count=9,
+        )
+        store.set_active(self.table, "pid1")
+        active = store.get_active(self.table)
+        self.assertEqual(active["playlist_id"], "pid1")
+        self.assertNotIn("source", active)
+        self.assertNotIn("photo_count", active)
+        self.assertNotIn("pool_count", active)
 
 
 class TestJsonable(unittest.TestCase):

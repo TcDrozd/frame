@@ -210,6 +210,10 @@ def get_status(event: dict, params: dict) -> Any:
         "manifest_key": config.manifest_key(),
         "manifest_head": manifest_head,
         "presign_expiry_seconds": config.presign_expiry_seconds(),
+        "auto_publish": {
+            "mode": config.auto_publish_mode(),
+            "window_size": config.auto_window_size(),
+        },
     }
 
 

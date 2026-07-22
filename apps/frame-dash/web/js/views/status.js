@@ -6,6 +6,7 @@ export async function renderStatus(app) {
   app.innerHTML = `<p class="muted">Loading status…</p>`;
   const status = await api.get("/api/status");
   const active = status.active;
+  const autoOn = status.auto_publish && status.auto_publish.mode === "window";
 
   app.innerHTML = `
     <h2>Status</h2>
@@ -13,7 +14,16 @@ export async function renderStatus(app) {
       <dt>Active playlist</dt>
       <dd>${active && active.playlist_id
         ? `<a href="#/playlist/${active.playlist_id}">${esc(active.playlist_name || active.playlist_id)}</a>`
-        : '<span class="muted">none — scheduled refresh is idle</span>'}</dd>
+        : active && active.source === "auto"
+          ? `auto window — ${active.photo_count} of ${active.pool_count} photos, rotates daily`
+          : autoOn
+            ? '<span class="muted">none — auto window publishes on the next scheduled run</span>'
+            : '<span class="muted">none — scheduled refresh is idle</span>'}</dd>
+
+      <dt>Auto-publish</dt>
+      <dd>${autoOn
+        ? `window of ${status.auto_publish.window_size} (takes over whenever no playlist is active)`
+        : '<span class="muted">off</span>'}</dd>
 
       <dt>Last published</dt>
       <dd>${active && active.last_published_at

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import auto_select
 from . import config
 from . import manifest as manifest_mod
 from . import signing
@@ -95,4 +96,71 @@ def publish_playlist(
         "skipped_keys": skipped,
         "manifest_key": manifest_key,
         "dry_run": dry_run,
+    }
+
+
+def publish_auto(
+    s3,
+    table,
+    *,
+    bucket: str,
+    manifest_key: str,
+    prefix: str,
+    window: int,
+    expires: int,
+    resolved_start_epoch: int | None = None,
+) -> dict[str, Any]:
+    """Publish an automatic selection when no curated playlist is active.
+
+    Membership is deterministic per UTC day (see auto_select), so refresh
+    runs within a day re-sign the same photos and the window rotates at
+    midnight. The epoch is frozen on the first auto publish and passed back
+    in on every later one, so rotation never restarts playback.
+    """
+    pool = auto_select.list_media_keys(s3, bucket, prefix)
+    keys = auto_select.select_window(pool, window, prefix=prefix)
+    if not keys:
+        raise ValueError(f"no photos found under {prefix!r}; nothing to publish")
+
+    settings = store.DEFAULT_SETTINGS
+    if resolved_start_epoch is not None:
+        start_epoch = int(resolved_start_epoch)
+    else:
+        start_epoch = manifest_mod.resolve_start_epoch("now")
+
+    url_for, url_expires_at = _photo_url_strategy()
+    doc, skipped = manifest_mod.render_manifest(
+        s3,
+        bucket,
+        keys,
+        mode=settings["mode"],
+        slide_seconds=int(settings["slide_seconds"]),
+        start_epoch=start_epoch,
+        expires=expires,
+        url_for=url_for,
+        url_expires_at=url_expires_at,
+    )
+    if not doc["photos"]:
+        raise ValueError("selected photos no longer exist in the bucket; nothing to publish")
+
+    manifest_mod.write_manifest(s3, bucket, manifest_key, doc)
+    legacy_key = config.legacy_manifest_key()
+    if legacy_key and legacy_key != manifest_key:
+        manifest_mod.write_manifest(s3, bucket, legacy_key, doc)
+    store.record_auto_publish(
+        table,
+        manifest_key=manifest_key,
+        version=doc["version"],
+        resolved_start_epoch=start_epoch,
+        photo_count=len(doc["photos"]),
+        pool_count=len(pool),
+    )
+
+    return {
+        "manifest": doc,
+        "version": doc["version"],
+        "photo_count": len(doc["photos"]),
+        "pool_count": len(pool),
+        "skipped_keys": skipped,
+        "manifest_key": manifest_key,
     }

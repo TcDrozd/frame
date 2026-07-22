@@ -88,5 +88,60 @@ class TestPublishPlaylist(unittest.TestCase):
         write.assert_not_called()
 
 
+class TestPublishAuto(unittest.TestCase):
+    def test_selects_renders_writes_and_records(self):
+        s3 = make_s3()
+        with Stubber(s3) as stubber:
+            stubber.add_response(
+                "list_objects_v2",
+                {"Contents": [{"Key": "photos/a.jpg"}, {"Key": "photos/skip.txt"}]},
+                {"Bucket": "b", "Prefix": "photos/"},
+            )
+            stubber.add_response(
+                "head_object",
+                {"ContentLength": 1, "ETag": '"e"'},
+                {"Bucket": "b", "Key": "photos/a.jpg"},
+            )
+            with patch.dict(
+                os.environ, {"LEGACY_MANIFEST_KEY": "", "PHOTO_URL_MODE": "presign"}, clear=False
+            ), patch.object(publishing.manifest_mod, "write_manifest") as write, patch.object(
+                publishing.store, "record_auto_publish"
+            ) as record:
+                result = publishing.publish_auto(
+                    s3,
+                    table=None,
+                    bucket="b",
+                    manifest_key="manifest.json",
+                    prefix="photos/",
+                    window=10,
+                    expires=3600,
+                    resolved_start_epoch=1750000000,
+                )
+        self.assertEqual(result["photo_count"], 1)
+        self.assertEqual(result["pool_count"], 1)
+        self.assertEqual(result["manifest"]["start_epoch"], 1750000000)
+        write.assert_called_once()
+        self.assertEqual(record.call_args.kwargs["resolved_start_epoch"], 1750000000)
+        self.assertEqual(record.call_args.kwargs["photo_count"], 1)
+        self.assertEqual(record.call_args.kwargs["pool_count"], 1)
+
+    def test_empty_pool_raises_without_writing(self):
+        s3 = make_s3()
+        with Stubber(s3) as stubber:
+            stubber.add_response("list_objects_v2", {}, {"Bucket": "b", "Prefix": "photos/"})
+            with patch.object(publishing.manifest_mod, "write_manifest") as write:
+                with self.assertRaises(ValueError):
+                    publishing.publish_auto(
+                        s3,
+                        table=None,
+                        bucket="b",
+                        manifest_key="manifest.json",
+                        prefix="photos/",
+                        window=10,
+                        expires=3600,
+                    )
+        write.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

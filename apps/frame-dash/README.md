@@ -28,6 +28,16 @@ trevor-shared-photo-stream/manifest[.dev].json  ◄── clients poll (public r
 - **Scheduled re-publish** refreshes presigned URLs every 2 hours, reusing the
   `resolved_start_epoch` frozen at the first publish so all frames keep their
   lockstep playback position. Only an explicit publish restarts the show.
+- **Auto-publish** (`AutoPublishMode=window`, default `off`): when no curated
+  playlist is active, each scheduled run instead publishes an automatic
+  selection — `AutoWindowSize` photos interleaved across top-level folders
+  (`shared/auto_select.py`, ported from the v1 publisher), membership rotated
+  by a deterministic daily shuffle so URL refreshes within a day never churn
+  photos. The auto pointer freezes its own `resolved_start_epoch`, so daily
+  rotation doesn't restart playback either. A curated publish always takes
+  precedence; "Clear active" in the dashboard hands control back to auto on
+  the next run. In this mode the schedule is also the freshness cadence —
+  keep it daily-or-better even after the CloudFront cutover.
 - The photo bucket pre-exists and is **not** managed by this stack; the stack
   only gets least-privilege IAM against it.
 
