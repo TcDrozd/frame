@@ -12,6 +12,8 @@ V2 monorepo for the Shared Photo Frame ecosystem. Everything exists to produce a
 
 **Consumer:** **`apps/client`** (static `index.html` + `app.js`, no build/deps) — **frozen/production** kiosk slideshow. Fetch manifest → cache locally → play offline-first. Intentionally dumb; changes here are rare.
 
+**Consumer host — `apps/pi-client`:** Raspberry Pi appliance that displays `apps/client` (X + Openbox + fullscreen Chromium on boot, systemd units, token-auth Flask webhook writing `/var/lib/kiosk/url.txt`, watched by a `.path` unit that restarts the browser). It runs the client unmodified and knows nothing about manifests — a second *host*, not a second client. Vendored from the separate private repo `TcDrozd/pi-dash` @ `00c69ad`; four upstream bugs were fixed on the way in and `install.sh` has not been re-run on hardware (see its README). Vendored as plain files, not a submodule.
+
 `legacy/` is archived v1 source — reference only, never deploy from it. `tools/publish_manifest.py` is the retired v1 publisher CLI, kept only as a break-glass copy (its `--inject-placement random` path has a known `NameError`). The v1 `apps/publisher-api` was deleted (it exposed an unauthenticated publish endpoint); see git history.
 
 ## Commands

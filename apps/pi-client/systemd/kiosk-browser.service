@@ -1,0 +1,25 @@
+[Unit]
+Description=Kiosk Chromium (Openbox)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=kiosk
+Environment=DISPLAY=:0
+Environment=XDG_RUNTIME_DIR=/run/user/1001
+PAMName=login
+TTYPath=/dev/tty1
+StandardInput=tty
+Restart=always
+RestartSec=2
+ExecStart=/bin/bash -lc '
+  # start a bare X session and run openbox which launches Chromium
+  if ! pgrep -x Xorg >/dev/null; then
+    startx /usr/bin/openbox-session -- :0 vt1
+  else
+    openbox --replace
+  fi
+'
+
+[Install]
+WantedBy=multi-user.target

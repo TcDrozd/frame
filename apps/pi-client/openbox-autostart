@@ -1,0 +1,23 @@
+# Openbox autostart — installed to /home/kiosk/.config/openbox/autostart
+# Hide mouse cursor after 1s
+unclutter -idle 1 &
+
+# Keep display awake
+xset -dpms
+xset s off
+
+# Read target URL (falls back to the frame client on the home server)
+URL_FILE="/var/lib/kiosk/url.txt"
+URL="$(cat "$URL_FILE" 2>/dev/null || echo http://frame.local/)"
+
+# Launch Chromium in kiosk
+chromium-browser \
+  --kiosk "$URL" \
+  --noerrdialogs \
+  --disable-translate \
+  --disable-features=TranslateUI \
+  --autoplay-policy=no-user-gesture-required \
+  --check-for-update-interval=31536000 \
+  --incognito \
+  --test-type \
+  --no-first-run

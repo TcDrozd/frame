@@ -16,7 +16,7 @@ system, and its schema is a frozen contract.
        photos                          curation                     playback
  ┌───────────────────┐        ┌────────────────────────┐      ┌────────────────┐
  │ portal (uploads)  │        │ frame-dash             │      │ client         │
- │ tools/s3_rsync.py │──────► │  playlists in DynamoDB │      │ (kiosk tablet) │
+ │ tools/s3_rsync.py │──────► │  playlists in DynamoDB │      │ (tablet or Pi) │
  │  (bulk ingest)    │        │  renders + presigns    │      │                │
  └───────────────────┘        └───────────┬────────────┘      └───────▲────────┘
            │                              │ writes                    │ polls
@@ -46,6 +46,7 @@ an explicit publish restarts the show.
 | --- | --- | --- |
 | `apps/frame-dash` | **The publisher.** Vanilla-JS SPA + Cognito + API Gateway + Lambda + DynamoDB, deployed with AWS SAM. Browse the library, build playlists, publish one. Also auto-publishes a rotating window when nothing is curated. | AWS (account 084683516815, us-east-1) |
 | `apps/client` | **The display.** Static `index.html` + `app.js`, no build step, no dependencies. Fetch → cache → play. Frozen/production; changes here are rare and deliberate. | Android tablets under Fully Kiosk |
+| `apps/pi-client` | **A host for the display.** Raspberry Pi kiosk appliance — X + Openbox + fullscreen Chromium on boot, systemd units, and a token-auth webhook to repoint the page. Runs `apps/client` unmodified. | Raspberry Pi on a TV/monitor |
 | `apps/portal` | Uploads + photo metadata (FastAPI, HTMX, SQLite). Pins/bumps/hides. Its publish path was removed. Slated for retirement once frame-dash grows an upload view. | Home server, `/opt/frame`, Tailscale-only |
 | `tools/` | `s3_rsync.py` (bulk photo ingest), `deploy/` (rsync deploy scripts), `manual-selector/` and `generate_manifest-v1.py` (v1-era helpers), `publish_manifest.py` (retired v1 publisher, break-glass only) | Laptop / server |
 | `legacy/` | Archived v1 source. Reference only — never deploy from here. | — |

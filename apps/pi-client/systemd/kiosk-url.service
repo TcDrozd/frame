@@ -1,0 +1,6 @@
+[Unit]
+Description=Restart kiosk browser on URL change
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl restart kiosk-browser.service
