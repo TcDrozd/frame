@@ -49,7 +49,7 @@ an explicit publish restarts the show.
 | `apps/pi-client` | **A host for the display.** Raspberry Pi kiosk appliance — X + Openbox + fullscreen Chromium on boot, systemd units, and a token-auth webhook to repoint the page. Runs `apps/client` unmodified. | Raspberry Pi on a TV/monitor |
 | `apps/portal` | Uploads + photo metadata (FastAPI, HTMX, SQLite). Pins/bumps/hides. Its publish path was removed. Slated for retirement once frame-dash grows an upload view. | Home server, `/opt/frame`, Tailscale-only |
 | `tools/` | `s3_rsync.py` (bulk photo ingest), `deploy/` (rsync deploy scripts), `manual-selector/` and `generate_manifest-v1.py` (v1-era helpers), `publish_manifest.py` (retired v1 publisher, break-glass only) | Laptop / server |
-| `legacy/` | Archived v1 source. Reference only — never deploy from here. | — |
+| `legacy/` | Archived v1 source, vendored as plain files. Reference only — never deploy from here. See `legacy/README.md` for provenance. | — |
 
 Each app has its own README with the detail: architecture and runbooks in
 `apps/frame-dash/README.md`, the manifest contract and recovery model in

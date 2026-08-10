@@ -1,0 +1,311 @@
+{
+  "schema": 1,
+  "version": "v20251226-155602Z",
+  "generated_at": "2025-12-26T15:56:02Z",
+  "mode": "sync",
+  "slide_seconds": 1380,
+  "photos": [
+    {
+      "id": "IMG_4085.jpeg",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/IMG_4085.jpeg?REDACTED",
+      "name": "IMG 4085",
+      "bytes": 3172991
+    },
+    {
+      "id": "20040605h02_003_JFR.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20040605h02_003_JFR.JPG?REDACTED",
+      "name": "20040605h02 003 JFR",
+      "bytes": 1628587
+    },
+    {
+      "id": "20060121fot_007.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20060121fot_007.JPG?REDACTED",
+      "name": "20060121fot 007",
+      "bytes": 1932101
+    },
+    {
+      "id": "20060506ab0_014.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20060506ab0_014.JPG?REDACTED",
+      "name": "20060506ab0 014",
+      "bytes": 2567962
+    },
+    {
+      "id": "20051225fxm_011.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20051225fxm_011.JPG?REDACTED",
+      "name": "20051225fxm 011",
+      "bytes": 2592902
+    },
+    {
+      "id": "IMG_0133.jpeg",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/IMG_0133.jpeg?REDACTED",
+      "name": "IMG 0133",
+      "bytes": 1647695
+    },
+    {
+      "id": "20051225fxm_004.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20051225fxm_004.JPG?REDACTED",
+      "name": "20051225fxm 004",
+      "bytes": 2929054
+    },
+    {
+      "id": "20060506ab0_006.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20060506ab0_006.JPG?REDACTED",
+      "name": "20060506ab0 006",
+      "bytes": 2725318
+    },
+    {
+      "id": "20051225fxm_005.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20051225fxm_005.JPG?REDACTED",
+      "name": "20051225fxm 005",
+      "bytes": 2988519
+    },
+    {
+      "id": "IMG_0135.jpeg",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/IMG_0135.jpeg?REDACTED",
+      "name": "IMG 0135",
+      "bytes": 4123281
+    },
+    {
+      "id": "20040506fbr_006.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20040506fbr_006.JPG?REDACTED",
+      "name": "20040506fbr 006",
+      "bytes": 957160
+    },
+    {
+      "id": "IMG_0148.jpeg",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/IMG_0148.jpeg?REDACTED",
+      "name": "IMG 0148",
+      "bytes": 1488574
+    },
+    {
+      "id": "20060122fbr_014.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20060122fbr_014.JPG?REDACTED",
+      "name": "20060122fbr 014",
+      "bytes": 1846614
+    },
+    {
+      "id": "20060522ab0_008.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20060522ab0_008.JPG?REDACTED",
+      "name": "20060522ab0 008",
+      "bytes": 2518182
+    },
+    {
+      "id": "20040313f03_003.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20040313f03_003.JPG?REDACTED",
+      "name": "20040313f03 003",
+      "bytes": 2847206
+    },
+    {
+      "id": "20050824h03_002.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20050824h03_002.JPG?REDACTED",
+      "name": "20050824h03 002",
+      "bytes": 2555790
+    },
+    {
+      "id": "20040506fbr_003.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20040506fbr_003.JPG?REDACTED",
+      "name": "20040506fbr 003",
+      "bytes": 823825
+    },
+    {
+      "id": "20060522ab0_005.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20060522ab0_005.JPG?REDACTED",
+      "name": "20060522ab0 005",
+      "bytes": 2958392
+    },
+    {
+      "id": "20050331vnf_013.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20050331vnf_013.JPG?REDACTED",
+      "name": "20050331vnf 013",
+      "bytes": 2243132
+    },
+    {
+      "id": "20040506fbr_018.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20040506fbr_018.JPG?REDACTED",
+      "name": "20040506fbr 018",
+      "bytes": 947127
+    },
+    {
+      "id": "IMG_0027.jpeg",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/IMG_0027.jpeg?REDACTED",
+      "name": "IMG 0027",
+      "bytes": 266156
+    },
+    {
+      "id": "20040605h02_002_JFR.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20040605h02_002_JFR.JPG?REDACTED",
+      "name": "20040605h02 002 JFR",
+      "bytes": 1534593
+    },
+    {
+      "id": "20060522ab0_041.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20060522ab0_041.JPG?REDACTED",
+      "name": "20060522ab0 041",
+      "bytes": 2073106
+    },
+    {
+      "id": "20040214lna_005_JFR.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20040214lna_005_JFR.JPG?REDACTED",
+      "name": "20040214lna 005 JFR",
+      "bytes": 1558204
+    },
+    {
+      "id": "20060122fbr_009.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20060122fbr_009.JPG?REDACTED",
+      "name": "20060122fbr 009",
+      "bytes": 3274712
+    },
+    {
+      "id": "20060121fot_003.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20060121fot_003.JPG?REDACTED",
+      "name": "20060121fot 003",
+      "bytes": 2228070
+    },
+    {
+      "id": "20060522ab0_006.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20060522ab0_006.JPG?REDACTED",
+      "name": "20060522ab0 006",
+      "bytes": 2666526
+    },
+    {
+      "id": "20050331vnf_038.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20050331vnf_038.JPG?REDACTED",
+      "name": "20050331vnf 038",
+      "bytes": 2762662
+    },
+    {
+      "id": "20040313f03_005.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20040313f03_005.JPG?REDACTED",
+      "name": "20040313f03 005",
+      "bytes": 3358188
+    },
+    {
+      "id": "5e05c39b.jpeg",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/5e05c39b.jpeg?REDACTED",
+      "name": "5e05c39b",
+      "bytes": 140071
+    },
+    {
+      "id": "FN-Dad.jpg",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/FN-Dad.jpg?REDACTED",
+      "name": "FN-Dad",
+      "bytes": 864989
+    },
+    {
+      "id": "20060122fbr_003.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20060122fbr_003.JPG?REDACTED",
+      "name": "20060122fbr 003",
+      "bytes": 2755432
+    },
+    {
+      "id": "20060122fbr_029.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20060122fbr_029.JPG?REDACTED",
+      "name": "20060122fbr 029",
+      "bytes": 2514096
+    },
+    {
+      "id": "229.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/229.JPG?REDACTED",
+      "name": "229",
+      "bytes": 1992942
+    },
+    {
+      "id": "20060506ab0_004.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20060506ab0_004.JPG?REDACTED",
+      "name": "20060506ab0 004",
+      "bytes": 2679630
+    },
+    {
+      "id": "20040506fbr_007.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20040506fbr_007.JPG?REDACTED",
+      "name": "20040506fbr 007",
+      "bytes": 1126458
+    },
+    {
+      "id": "20051030h03_029.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20051030h03_029.JPG?REDACTED",
+      "name": "20051030h03 029",
+      "bytes": 2809576
+    },
+    {
+      "id": "20051225fxm_009.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20051225fxm_009.JPG?REDACTED",
+      "name": "20051225fxm 009",
+      "bytes": 3296954
+    },
+    {
+      "id": "20051030h03_032.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20051030h03_032.JPG?REDACTED",
+      "name": "20051030h03 032",
+      "bytes": 2611168
+    },
+    {
+      "id": "IMG_0033.jpeg",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/IMG_0033.jpeg?REDACTED",
+      "name": "IMG 0033",
+      "bytes": 1981316
+    },
+    {
+      "id": "IMG_0037.jpeg",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/IMG_0037.jpeg?REDACTED",
+      "name": "IMG 0037",
+      "bytes": 2663889
+    },
+    {
+      "id": "20050824h03_013.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20050824h03_013.JPG?REDACTED",
+      "name": "20050824h03 013",
+      "bytes": 2945178
+    },
+    {
+      "id": "20040313f03_009.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20040313f03_009.JPG?REDACTED",
+      "name": "20040313f03 009",
+      "bytes": 2742410
+    },
+    {
+      "id": "IMG_0035.jpeg",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/IMG_0035.jpeg?REDACTED",
+      "name": "IMG 0035",
+      "bytes": 215764
+    },
+    {
+      "id": "IMG_0081.jpeg",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/IMG_0081.jpeg?REDACTED",
+      "name": "IMG 0081",
+      "bytes": 2462762
+    },
+    {
+      "id": "242.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/242.JPG?REDACTED",
+      "name": "242",
+      "bytes": 2132185
+    },
+    {
+      "id": "20060522ab0_040.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20060522ab0_040.JPG?REDACTED",
+      "name": "20060522ab0 040",
+      "bytes": 2736922
+    },
+    {
+      "id": "FN-Craig.jpg",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/FN-Craig.jpg?REDACTED",
+      "name": "FN-Craig",
+      "bytes": 825416
+    },
+    {
+      "id": "20080102awe_002.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20080102awe_002.JPG?REDACTED",
+      "name": "20080102awe 002",
+      "bytes": 1998582
+    },
+    {
+      "id": "20050331vnf_053.JPG",
+      "url": "https://trevor-shared-photo-stream.s3.amazonaws.com/photos/20050331vnf_053.JPG?REDACTED",
+      "name": "20050331vnf 053",
+      "bytes": 2337134
+    }
+  ],
+  "start_epoch": 1766764562,
+  "_redaction_note": "Archived sample. Presigned query strings were replaced with '?REDACTED' when this file was vendored into the monorepo: they embedded an AWS access key id and their signatures expired 2025-12-27. Structure is otherwise verbatim from tag client-v2.0.0."
+}

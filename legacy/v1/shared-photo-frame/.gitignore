@@ -1,0 +1,5 @@
+photos/*
+venv
+example.*
+.DS_Store
+.publish_state.json

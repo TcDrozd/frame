@@ -14,7 +14,7 @@ V2 monorepo for the Shared Photo Frame ecosystem. Everything exists to produce a
 
 **Consumer host — `apps/pi-client`:** Raspberry Pi appliance that displays `apps/client` (X + Openbox + fullscreen Chromium on boot, systemd units, token-auth Flask webhook writing `/var/lib/kiosk/url.txt`, watched by a `.path` unit that restarts the browser). It runs the client unmodified and knows nothing about manifests — a second *host*, not a second client. Vendored from the separate private repo `TcDrozd/pi-dash` @ `00c69ad`; four upstream bugs were fixed on the way in and `install.sh` has not been re-run on hardware (see its README). Vendored as plain files, not a submodule.
 
-`legacy/` is archived v1 source — reference only, never deploy from it. `tools/publish_manifest.py` is the retired v1 publisher CLI, kept only as a break-glass copy (its `--inject-placement random` path has a known `NameError`). The v1 `apps/publisher-api` was deleted (it exposed an unauthenticated publish endpoint); see git history.
+`legacy/` is archived v1 source — reference only, never deploy from it. Vendored as plain files (`legacy/v1/shared-photo-frame` was a broken gitlink until 2026-08-10; see `legacy/README.md` — never `git add` a directory containing a `.git/`). Note the naming trap: the commit under `legacy/v1/` is tagged `client-v2.0.0` upstream. `tools/publish_manifest.py` is the retired v1 publisher CLI, kept only as a break-glass copy (its `--inject-placement random` path has a known `NameError`). The v1 `apps/publisher-api` was deleted (it exposed an unauthenticated publish endpoint); see git history.
 
 ## Commands
 
