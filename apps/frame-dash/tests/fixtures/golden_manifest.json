@@ -1,0 +1,27 @@
+{
+  "schema": 2,
+  "version": "v20260101-000000Z",
+  "generated_at": "2026-01-01T00:00:00Z",
+  "mode": "sync",
+  "slide_seconds": 1380,
+  "photos": [
+    {
+      "id": "SCAN0060.JPG",
+      "url": "https://cdn.example/photos/01_scans/2008/SCAN0060.JPG?sig=golden",
+      "name": "SCAN0060",
+      "bytes": 111,
+      "key": "photos/01_scans/2008/SCAN0060.JPG",
+      "etag": "etag-a"
+    },
+    {
+      "id": "Beach_Day_001.jpg",
+      "url": "https://cdn.example/photos/02_digital-camera_family/2004/Beach_Day_001.jpg?sig=golden",
+      "name": "Beach Day 001",
+      "bytes": 222,
+      "key": "photos/02_digital-camera_family/2004/Beach_Day_001.jpg",
+      "etag": "etag-b"
+    }
+  ],
+  "start_epoch": 1750000000,
+  "url_expires_at": 1757776000
+}

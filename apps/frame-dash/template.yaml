@@ -1,0 +1,544 @@
+AWSTemplateFormatVersion: "2010-09-09"
+# The Transform is what makes this a SAM template: CloudFormation expands the
+# AWS::Serverless::* shorthand resources below into plain CloudFormation
+# (Lambda functions, IAM roles, API Gateway resources, EventBridge schedules)
+# before deploying. `sam build && sam deploy` packages the code and drives the
+# resulting CloudFormation stack.
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  frame-dash: serverless dashboard for the shared photo frame. Browse the
+  photo bucket, build playlists, and publish them as the manifest.json the
+  display clients poll. SPA on S3+CloudFront, API on HTTP API + Lambda,
+  playlists in DynamoDB, auth via Cognito.
+
+# ------------------------------------------------------------------------
+# Parameters: everything environment-specific. The photo bucket pre-exists
+# and is NOT created by this stack - it is only referenced by name.
+# ------------------------------------------------------------------------
+Parameters:
+  PhotosBucketName:
+    Type: String
+    Default: trevor-shared-photo-stream
+    Description: Pre-existing S3 bucket holding photos and the manifest.
+
+  PhotosPrefix:
+    Type: String
+    Default: photos/
+    Description: Key prefix the dashboard may browse/presign under.
+
+  ManifestKey:
+    Type: String
+    Default: manifest.dev.json
+    Description: >
+      Manifest object key published to. Defaults to a DEV key so deploys can
+      never clobber the live manifest.json by accident; production overrides
+      this via samconfig at cutover.
+
+  PresignExpirySeconds:
+    Type: Number
+    Default: 21600
+    Description: >
+      Requested presigned-URL lifetime (6h). Only used when
+      PhotoUrlMode=presign; real validity is also capped by the Lambda role
+      session, which is why the re-publish schedule below must run well
+      inside this window in that mode.
+
+  ScheduleExpression:
+    Type: String
+    Default: rate(2 hours)
+    Description: >
+      How often the active playlist is re-published with fresh URLs. Must
+      stay well under PresignExpirySeconds while PhotoUrlMode=presign; with
+      PhotoUrlMode=cloudfront the URLs live ~90 days, so override this to
+      rate(7 days) and it becomes a safety net instead of a treadmill.
+
+  PhotoUrlMode:
+    Type: String
+    Default: presign
+    AllowedValues: [presign, cloudfront]
+    Description: >
+      How manifest photo URLs are generated. "presign" = S3 presigned GETs.
+      "cloudfront" = CloudFront signed URLs via our own RSA key pair — no
+      role-session cap, so TTLs of months are fine. Requires
+      CloudFrontPublicKeyPem and the private key in SSM.
+
+  SignedUrlTtlSeconds:
+    Type: Number
+    Default: 7776000
+    Description: Lifetime of CloudFront signed photo URLs (default 90 days).
+
+  CloudFrontPublicKeyPem:
+    Type: String
+    Default: ""
+    Description: >
+      PEM-encoded RSA public key for CloudFront URL signing. Leave empty to
+      skip creating the photos distribution/key group entirely (bootstrap
+      deploys). Generate locally, keep the private half in SSM.
+
+  PrivateKeySsmName:
+    Type: String
+    Default: /frame-dash/cf-signing-key
+    Description: >
+      SSM SecureString parameter holding the RSA private key PEM that pairs
+      with CloudFrontPublicKeyPem.
+
+  LegacyManifestKey:
+    Type: String
+    Default: ""
+    Description: >
+      When set, every publish also writes the manifest to this key —
+      migration aid so old clients keep working while frames are repointed
+      to the CloudFront manifest path. Clear it after the grace period.
+
+  AutoPublishMode:
+    Type: String
+    Default: "off"
+    AllowedValues: ["off", "window"]
+    Description: >
+      "window" makes the scheduled Lambda publish an automatic selection
+      (AutoWindowSize photos interleaved across folders, membership rotated
+      daily, playback epoch preserved) whenever no curated playlist is
+      active. "off" keeps scheduled runs refresh-only. A curated publish
+      always takes precedence. In this mode ScheduleExpression is also the
+      freshness cadence — keep it daily-or-better even in cloudfront mode.
+
+  AutoWindowSize:
+    Type: Number
+    Default: 50
+    Description: Photos per automatic window when AutoPublishMode=window.
+
+  CognitoDomainPrefix:
+    Type: String
+    Default: frame-dash-tcd
+    Description: Globally-unique prefix for the Cognito hosted UI domain.
+
+Conditions:
+  HasSigningKey: !Not [!Equals [!Ref CloudFrontPublicKeyPem, ""]]
+  HasLegacyManifestKey: !Not [!Equals [!Ref LegacyManifestKey, ""]]
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [arm64]
+    MemorySize: 256
+    Timeout: 60
+    Environment:
+      Variables:
+        PHOTOS_BUCKET: !Ref PhotosBucketName
+        PHOTOS_PREFIX: !Ref PhotosPrefix
+        MANIFEST_KEY: !Ref ManifestKey
+        PLAYLIST_TABLE: !Ref PlaylistTable
+        PRESIGN_EXPIRY_SECONDS: !Ref PresignExpirySeconds
+        PHOTO_URL_MODE: !Ref PhotoUrlMode
+        PHOTOS_CDN_DOMAIN: !If [HasSigningKey, !GetAtt PhotosDistribution.DomainName, ""]
+        CF_KEY_PAIR_ID: !If [HasSigningKey, !Ref PhotosPublicKey, ""]
+        PRIVATE_KEY_SSM_NAME: !Ref PrivateKeySsmName
+        SIGNED_URL_TTL_SECONDS: !Ref SignedUrlTtlSeconds
+        LEGACY_MANIFEST_KEY: !Ref LegacyManifestKey
+        AUTO_PUBLISH_MODE: !Ref AutoPublishMode
+        AUTO_WINDOW_SIZE: !Ref AutoWindowSize
+
+Resources:
+  # ------------------------------------------------------------------------
+  # Cognito: user pool (admin-created users only - this is family-scale),
+  # an app client for the SPA (public client, PKCE, no secret), and the
+  # hosted-UI domain so we never have to hand-roll login/password-reset.
+  # ------------------------------------------------------------------------
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub ${AWS::StackName}-users
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true # no self-signup
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub ${AWS::StackName}-spa
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false # browser SPA = public client; PKCE instead
+      SupportedIdentityProviders: [COGNITO]
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email]
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH # lets us script token fetch for curl tests
+      CallbackURLs:
+        - !Sub https://${WebDistribution.DomainName}/
+        - http://localhost:8080/
+      LogoutURLs:
+        - !Sub https://${WebDistribution.DomainName}/
+        - http://localhost:8080/
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref CognitoDomainPrefix
+      UserPoolId: !Ref UserPool
+
+  # ------------------------------------------------------------------------
+  # HTTP API (API Gateway v2). The JWT authorizer validates Cognito tokens
+  # before the Lambda is ever invoked - no auth code in the handler. CORS is
+  # declared here too because authorizer rejections (401) never reach the
+  # Lambda, so the API itself must emit the CORS headers.
+  # ------------------------------------------------------------------------
+  DashApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Auth:
+        DefaultAuthorizer: CognitoJwt
+        Authorizers:
+          CognitoJwt:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+              audience:
+                - !Ref UserPoolClient
+      CorsConfiguration:
+        AllowOrigins:
+          - !Sub https://${WebDistribution.DomainName}
+          - http://localhost:8080
+        AllowMethods: [GET, POST, PUT, DELETE, OPTIONS]
+        AllowHeaders: [authorization, content-type]
+        MaxAge: 3600
+
+  # ------------------------------------------------------------------------
+  # API Lambda: one function, all /api/* routes, tiny router inside.
+  # IAM below is least-privilege against the PRE-EXISTING photo bucket:
+  # list/read only under PhotosPrefix, write only the manifest key.
+  # ------------------------------------------------------------------------
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-api
+      CodeUri: src/
+      Handler: api/handler.lambda_handler
+      # One event per real method instead of ANY: if OPTIONS matched a route,
+      # the JWT authorizer would 401 CORS preflights; with no OPTIONS route,
+      # API Gateway answers preflights automatically from CorsConfiguration.
+      Events:
+        ApiGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashApi
+            Method: GET
+            Path: /api/{proxy+}
+        ApiPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashApi
+            Method: POST
+            Path: /api/{proxy+}
+        ApiPut:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashApi
+            Method: PUT
+            Path: /api/{proxy+}
+        ApiDelete:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref DashApi
+            Method: DELETE
+            Path: /api/{proxy+}
+      Policies:
+        - Statement:
+            - Sid: ListPhotos
+              Effect: Allow
+              Action: s3:ListBucket
+              Resource: !Sub arn:aws:s3:::${PhotosBucketName}
+              Condition:
+                StringLike:
+                  s3:prefix: !Sub ${PhotosPrefix}*
+            - Sid: ReadPhotos
+              Effect: Allow
+              Action: s3:GetObject
+              Resource: !Sub arn:aws:s3:::${PhotosBucketName}/${PhotosPrefix}*
+            - Sid: ReadWriteManifest
+              Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+              Resource:
+                - !Sub arn:aws:s3:::${PhotosBucketName}/${ManifestKey}
+                - !If
+                  - HasLegacyManifestKey
+                  - !Sub arn:aws:s3:::${PhotosBucketName}/${LegacyManifestKey}
+                  - !Ref AWS::NoValue
+            # CloudFront URL signing: private key from SSM. kms:Decrypt is
+            # scoped via ViaService so it only works through SSM.
+            - Sid: ReadSigningKey
+              Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${PrivateKeySsmName}
+            - Sid: DecryptSigningKey
+              Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/*
+              Condition:
+                StringEquals:
+                  kms:ViaService: !Sub ssm.${AWS::Region}.amazonaws.com
+            # Future upload route: add s3:PutObject on ${PhotosPrefix}* here
+            # (plus a bucket CORS rule for the dashboard origin) - nothing
+            # else needs to change.
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PlaylistTable
+
+  # ------------------------------------------------------------------------
+  # Scheduled re-publish: EventBridge Scheduler fires this to re-render the
+  # active playlist with fresh presigned URLs, reusing the frozen
+  # resolved_start_epoch so client playback position is preserved.
+  # ------------------------------------------------------------------------
+  ScheduledFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-republish
+      CodeUri: src/
+      Handler: scheduled/handler.lambda_handler
+      Timeout: 120
+      Events:
+        Refresh:
+          Type: ScheduleV2
+          Properties:
+            # Explicit name so it matches the frame-dash-* patterns that
+            # deploy-policy.json scopes to (SAM's default name has no stack
+            # prefix).
+            Name: !Sub ${AWS::StackName}-refresh
+            ScheduleExpression: !Ref ScheduleExpression
+            Description: Refresh presigned URLs in the published manifest.
+      Policies:
+        - Statement:
+            # ListBucket matters beyond listing: without it S3 returns 403
+            # instead of 404 for missing keys, which breaks the renderer's
+            # skip-missing-photos behavior.
+            - Sid: ListPhotos
+              Effect: Allow
+              Action: s3:ListBucket
+              Resource: !Sub arn:aws:s3:::${PhotosBucketName}
+              Condition:
+                StringLike:
+                  s3:prefix: !Sub ${PhotosPrefix}*
+            - Sid: ReadPhotos
+              Effect: Allow
+              Action: s3:GetObject
+              Resource: !Sub arn:aws:s3:::${PhotosBucketName}/${PhotosPrefix}*
+            - Sid: WriteManifest
+              Effect: Allow
+              Action: s3:PutObject
+              Resource:
+                - !Sub arn:aws:s3:::${PhotosBucketName}/${ManifestKey}
+                - !If
+                  - HasLegacyManifestKey
+                  - !Sub arn:aws:s3:::${PhotosBucketName}/${LegacyManifestKey}
+                  - !Ref AWS::NoValue
+            - Sid: ReadSigningKey
+              Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${PrivateKeySsmName}
+            - Sid: DecryptSigningKey
+              Effect: Allow
+              Action: kms:Decrypt
+              Resource: !Sub arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/*
+              Condition:
+                StringEquals:
+                  kms:ViaService: !Sub ssm.${AWS::Region}.amazonaws.com
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PlaylistTable
+
+  # ------------------------------------------------------------------------
+  # Photos CDN: CloudFront + OAC in front of the (pre-existing, fully
+  # private) photo bucket. Photo paths require CloudFront signed URLs
+  # (TrustedKeyGroups); the m/* path serves the manifest unsigned and
+  # uncached so frames can poll it without credentials. The bucket policy
+  # statement granting this distribution s3:GetObject is managed manually
+  # alongside the bucket (it is not a stack resource) - see README.
+  # ------------------------------------------------------------------------
+  PhotosPublicKey:
+    Type: AWS::CloudFront::PublicKey
+    Condition: HasSigningKey
+    Properties:
+      PublicKeyConfig:
+        Name: !Sub ${AWS::StackName}-photo-signing
+        CallerReference: !Sub ${AWS::StackName}-photo-signing-v1
+        EncodedKey: !Ref CloudFrontPublicKeyPem
+
+  PhotosKeyGroup:
+    Type: AWS::CloudFront::KeyGroup
+    Condition: HasSigningKey
+    Properties:
+      KeyGroupConfig:
+        Name: !Sub ${AWS::StackName}-photo-keygroup
+        Items: [!Ref PhotosPublicKey]
+
+  PhotosOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Condition: HasSigningKey
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-photos-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  PhotosDistribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: HasSigningKey
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub ${AWS::StackName} photos (signed) + manifest (m/*)
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: photos-s3
+            DomainName: !Sub ${PhotosBucketName}.s3.${AWS::Region}.amazonaws.com
+            OriginAccessControlId: !GetAtt PhotosOAC.Id
+            S3OriginConfig: {}
+        DefaultCacheBehavior:
+          # Photos: signed URL required, cache aggressively.
+          TargetOriginId: photos-s3
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized
+          TrustedKeyGroups: [!Ref PhotosKeyGroup]
+        CacheBehaviors:
+          # Manifest lives under an unguessable m/<random>/ key: unsigned
+          # (frames are dumb pollers) and never cached (frames must see
+          # every publish immediately).
+          - PathPattern: m/*
+            TargetOriginId: photos-s3
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
+
+  # ------------------------------------------------------------------------
+  # DynamoDB: one on-demand table. Playlists are items under pk=PLAYLIST
+  # (ordered keys live in a list attribute - playlist order IS list order);
+  # the single pk=CONFIG/sk=active item points at the active playlist and
+  # carries the frozen resolved_start_epoch.
+  # ------------------------------------------------------------------------
+  PlaylistTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-playlists
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+
+  # ------------------------------------------------------------------------
+  # SPA hosting: private S3 bucket, readable only by CloudFront via Origin
+  # Access Control. The SPA uses hash routing (#/browse) so index.html is the
+  # only document CloudFront ever needs to serve - no 403->index rewrites.
+  # ------------------------------------------------------------------------
+  WebBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-web-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  WebOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-web-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  WebDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub ${AWS::StackName} dashboard SPA
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: web-s3
+            DomainName: !GetAtt WebBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt WebOAC.Id
+            S3OriginConfig: {} # OAC replaces legacy OAI; empty block required
+        DefaultCacheBehavior:
+          TargetOriginId: web-s3
+          ViewerProtocolPolicy: redirect-to-https
+          # AWS managed "CachingOptimized" policy
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+
+  WebBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontOAC
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${WebBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${WebDistribution}
+
+# ------------------------------------------------------------------------
+# Outputs feed two things: web/js/config.js (hand-pasted once) and
+# scripts/deploy_web.sh (reads them via `aws cloudformation describe-stacks`).
+# ------------------------------------------------------------------------
+Outputs:
+  ApiUrl:
+    Description: Base URL of the HTTP API (routes live under /api/...).
+    Value: !Sub https://${DashApi}.execute-api.${AWS::Region}.amazonaws.com
+
+  UserPoolId:
+    Value: !Ref UserPool
+
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+
+  CognitoDomain:
+    Description: Hosted UI base URL for login redirects.
+    Value: !Sub https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com
+
+  WebBucketName:
+    Value: !Ref WebBucket
+
+  DistributionId:
+    Value: !Ref WebDistribution
+
+  DashboardUrl:
+    Value: !Sub https://${WebDistribution.DomainName}
+
+  ManifestUrl:
+    Description: Where clients can fetch the manifest this stack publishes.
+    Value: !Sub https://${PhotosBucketName}.s3.${AWS::Region}.amazonaws.com/${ManifestKey}
+
+  PhotosCdnDomain:
+    Condition: HasSigningKey
+    Description: CloudFront domain serving signed photo URLs and the m/* manifest path.
+    Value: !GetAtt PhotosDistribution.DomainName
+
+  CdnManifestUrl:
+    Condition: HasSigningKey
+    Description: Manifest URL via CloudFront (point frames here once ManifestKey moves under m/).
+    Value: !Sub https://${PhotosDistribution.DomainName}/${ManifestKey}

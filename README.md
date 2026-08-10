@@ -1,141 +1,157 @@
-# frame (monorepo)
+# frame
 
-This repo is the refactored monorepo for the Shared Photo Frame ecosystem.
+A shared digital photo frame: family members' photos land in one S3 bucket, a
+curator picks what plays, and tablets mounted on walls in different houses show
+the same photo at the same time — and keep showing photos when the network is
+gone.
 
-It contains **deployable apps** (portal, publisher API, client) and **legacy v1 source** kept for reference.
+Everything in this repo exists to produce or consume **one artifact**: a
+`manifest.json` in the photo bucket. Producers write it; frames poll it. The
+manifest is the entire integration surface between the two halves of the
+system, and its schema is a frozen contract.
 
----
+## How it works
 
-## Layout
+```
+       photos                          curation                     playback
+ ┌───────────────────┐        ┌────────────────────────┐      ┌────────────────┐
+ │ portal (uploads)  │        │ frame-dash             │      │ client         │
+ │ tools/s3_rsync.py │──────► │  playlists in DynamoDB │      │ (kiosk tablet) │
+ │  (bulk ingest)    │        │  renders + presigns    │      │                │
+ └───────────────────┘        └───────────┬────────────┘      └───────▲────────┘
+           │                              │ writes                    │ polls
+           ▼                              ▼                           │ hourly
+      s3://trevor-shared-photo-stream/photos/…      …/manifest.json ───┘
+           (private, presigned URLs only)            (public read)
+```
 
-### Repo (source of truth)
+1. **Photos go into S3.** Either through the portal's browser uploads
+   (pre-signed POST, so bytes never pass through a server) or in bulk from a
+   laptop with `tools/s3_rsync.py`.
+2. **A playlist is published.** frame-dash renders an ordered list of S3 keys
+   into a manifest of pre-signed GET URLs and writes it to the manifest key.
+3. **Frames poll and cache.** Each client fetches the manifest hourly, downloads
+   the photos into IndexedDB, and plays from that cache forever — offline,
+   after a reboot, whether or not anything upstream is alive.
 
-frame/
-  apps/
-    portal/            # FastAPI portal (admin UI + API)
-    publisher-api/     # Flask API that serves published content / endpoints
-    client/            # display client (static files)
-  tools/               # helper scripts (deploy, maintenance, utilities)
-  legacy/
-    v1/                # archived v1 code (do not deploy from here)
+Presigned URLs expire, so a scheduled Lambda re-publishes every couple of hours
+to refresh them. It reuses the `resolved_start_epoch` frozen at the original
+publish, which is what keeps geographically separate frames on the same slide:
+playback position is wall-clock math from that epoch, not from boot time. Only
+an explicit publish restarts the show.
 
+## Components
 
-### Runtime (production on the host)
-Runtime lives under **/opt** and is intentionally split into:
-- **code** (safe to deploy with rsync --delete)
-- **data** (never touched by deploy)
-- **venvs** (never touched by deploy unless rebuilding deps)
+| Path | What it is | Runs on |
+| --- | --- | --- |
+| `apps/frame-dash` | **The publisher.** Vanilla-JS SPA + Cognito + API Gateway + Lambda + DynamoDB, deployed with AWS SAM. Browse the library, build playlists, publish one. Also auto-publishes a rotating window when nothing is curated. | AWS (account 084683516815, us-east-1) |
+| `apps/client` | **The display.** Static `index.html` + `app.js`, no build step, no dependencies. Fetch → cache → play. Frozen/production; changes here are rare and deliberate. | Android tablets under Fully Kiosk |
+| `apps/portal` | Uploads + photo metadata (FastAPI, HTMX, SQLite). Pins/bumps/hides. Its publish path was removed. Slated for retirement once frame-dash grows an upload view. | Home server, `/opt/frame`, Tailscale-only |
+| `tools/` | `s3_rsync.py` (bulk photo ingest), `deploy/` (rsync deploy scripts), `manual-selector/` and `generate_manifest-v1.py` (v1-era helpers), `publish_manifest.py` (retired v1 publisher, break-glass only) | Laptop / server |
+| `legacy/` | Archived v1 source. Reference only — never deploy from here. | — |
 
+Each app has its own README with the detail: architecture and runbooks in
+`apps/frame-dash/README.md`, the manifest contract and recovery model in
+`apps/client/README.md`, setup in `apps/portal/README.md`.
 
+## The manifest contract
+
+The client is intentionally dumb, which only works if the manifest never
+surprises it. Schema 2 (current) is a strict superset of schema 1:
+
+```json
+{
+  "schema": 2,
+  "version": "v20260101-000000Z",
+  "generated_at": "2026-01-01T00:00:00Z",
+  "mode": "sync",
+  "slide_seconds": 1380,
+  "start_epoch": 1750000000,
+  "url_expires_at": 1757776000,
+  "photos": [
+    { "id": "IMG_1234.jpg", "url": "https://…", "key": "photos/2026/trip/IMG_1234.jpg", "etag": "abc123" }
+  ]
+}
+```
+
+Schema-1 fields never change name or type. The canonical example is the golden
+fixture at `apps/frame-dash/tests/fixtures/golden_manifest.json`, pinned by a
+test — if a change breaks that test, it breaks frames in other people's houses.
+Field-by-field notes live in `apps/client/README.md`.
+
+## Where things run
+
+**AWS.** frame-dash owns the manifest. The photo bucket pre-exists and is *not*
+managed by the SAM stack; the stack only gets least-privilege IAM against it.
+The bucket policy allows public `s3:GetObject` on the manifest keys only —
+photos stay private and are reachable exclusively through presigned URLs.
+
+The stack parameter `ManifestKey` defaults to **`manifest.dev.json`**, so a dev
+deploy can never clobber the live show. Only `sam deploy --config-env prod`
+writes `manifest.json`.
+
+**The home server.** Source of truth is this repo, checked out as `~/frame`;
+runtime lives at `/opt/frame`. `tools/deploy/deploy_*.sh` rsync
+`apps/<app>` → `/opt/frame/apps/<app>` with `--delete`.
+
+```
 /opt/frame/
-  apps/                # deployed code only
-  var/                 # writable runtime state (db, selections, uploads, etc.)
-  venv/                # per-app python venvs
-  VERSION              # optional deploy stamp log
+  apps/     deployed code only — safe to replace wholesale
+  var/      writable state (portal DB at var/portal/portal.db, uploads) — never touched by deploy
+  venv/     per-app virtualenvs — never touched by deploy
+  VERSION   deploy stamp log
+```
 
+> **Key rule:** deploy may replace `/opt/frame/apps/*` freely, but must never
+> delete or overwrite `/opt/frame/var/*` or `/opt/frame/venv/*`.
 
-#### Key rule
-> Deploy scripts may replace `/opt/frame/apps/*` freely, but must not delete or overwrite `/opt/frame/var/*` or `/opt/frame/venv/*`.
+The v1 runtime still exists separately at `/opt/shared-photo-frame/…` so v2 can
+be iterated on without taking a live frame down.
 
----
+## Working in this repo
 
-## V1 vs V2
+```bash
+# frame-dash (from apps/frame-dash/)
+sam build && sam deploy          # dev → manifest.dev.json
+./scripts/deploy_web.sh          # sync SPA to S3 + CloudFront invalidation
 
-- **V1** runtime is currently preserved separately (e.g. `/opt/shared-photo-frame/...`).
-- This monorepo is the **V2** source and deployment target (`/opt/frame/...`).
+# portal (from apps/portal/)
+python -m venv venv && source venv/bin/activate && pip install -r requirements.txt
+python scripts/portalctl.py db upgrade
+uvicorn app.main:app --port 8000 --reload
 
-The intent is to allow iteration on V2 without breaking the currently running V1 client/service.
+# tests (from repo root; stdlib unittest, botocore Stubber, no live AWS)
+python3 -m unittest discover -s tests -v
+apps/frame-dash/.venv/bin/python -m unittest discover -s apps/frame-dash/tests -v
+```
 
----
+Conventions:
 
-## Deployment approach
+- No secrets in the repo. `.env` files are gitignored and excluded from deploy;
+  AWS credentials come from standard SDK resolution (env, `~/.aws`, IAM role),
+  never from code.
+- No SQLite databases in the repo — production state lives under `/opt/frame/var/`.
+- The client and the frame-dash SPA are deliberately buildless vanilla JS. No
+  frameworks, no bundlers.
+- Portal UI/API links use named routes (`request.url_for(...)`), not hardcoded
+  paths.
 
-### Deploy philosophy
-- **Source:** `~/frame` (this repo)
-- **Runtime:** `/opt/frame`
-- Deploy uses `rsync` to copy code into `/opt/frame/apps/<app>`
-- Runtime state is stored in `/opt/frame/var/<app>`
+## Bulk photo ingest (`tools/s3_rsync.py`)
 
-### Common paths
-- Portal DB (prod): `/opt/frame/var/portal/portal.db`
-- Publisher selections (prod): `/opt/frame/var/publisher-api/selections/`
-- Venvs:
-  - `/opt/frame/venv/portal/`
-  - `/opt/frame/venv/publisher-api/`
-
----
-
-## Local development (suggested)
-
-This repo is designed to be developed locally and synced to the server via git.
-
-Suggested flow:
-1. Develop on local machine
-2. Push to remote (GitHub/Gitea/etc.)
-3. Pull on server into `~/frame`
-4. Run deploy scripts to sync into `/opt/frame`
-
----
-
-## Notes / conventions
-
-- Secrets should not be committed (`.env` files are ignored). Use:
-  - `/etc/<app>/...` or
-  - systemd EnvironmentFile, or
-  - a secrets directory outside the repo.
-- Avoid storing SQLite DBs in the repo. Use `/opt/frame/var/...` for production.
-- `legacy/` is reference-only unless explicitly stated.
-
----
-
-## Status
-This repo is actively under refactor; service files and deploy scripts are being standardized to point at `/opt/frame/...`.
-
-## S3 Photo Sync CLI (`tools/s3_rsync.py`)
-
-`tools/s3_rsync.py` syncs a local directory tree to an S3 prefix with idempotent upload checks and optional content dedupe.
-
-### Install
+Syncs a local directory tree to an S3 prefix, idempotently — for seeding the
+library from an existing photo archive rather than uploading one at a time.
 
 ```bash
 pip install boto3
-```
-
-### AWS credentials
-
-Credentials are loaded using standard AWS SDK resolution (env vars, `~/.aws/credentials`, IAM role, etc.).  
-Do not put credentials in code.
-
-### Examples
-
-```bash
-# Non-interactive dry run
-python tools/s3_rsync.py --source "/photos/2025" --dest "s3://trevor-photo-bucket/photos/2025/" --dry-run
-
-# Interactive (prompts for source and destination)
-python tools/s3_rsync.py
-
-# More worker threads
-python tools/s3_rsync.py --source ./export --dest s3://my-bucket/ingest/export/ --workers 8
-
-# Enable content dedupe by SHA-256
+python tools/s3_rsync.py --source ./photos --dest s3://my-bucket/photos/ --dry-run
+python tools/s3_rsync.py                      # interactive prompts
+python tools/s3_rsync.py --source ./export --dest s3://my-bucket/ingest/ --workers 8
 python tools/s3_rsync.py --source ./photos --dest s3://my-bucket/photos/ --content-dedupe
 ```
 
-### Idempotency behavior
-
-For each local file, the script maps `relative/path.ext` to `s3://bucket/prefix/relative/path.ext` and runs `head_object`:
-
-1. If object is missing, upload.
-2. If object exists and has metadata `sha256`, compare against local SHA-256 and skip when equal.
-3. If `sha256` metadata is not present, fall back to metadata `size` + `mtime` and skip when both match.
-4. Otherwise upload and set metadata:
-   - `x-amz-meta-sha256`
-   - `x-amz-meta-size`
-   - `x-amz-meta-mtime`
-
-### Cache file
-
-Default cache path is `.s3_rsync_cache.json` (override with `--cache`).  
-It stores local file signature (`path + size + mtime`) to SHA-256 so unchanged files are not re-hashed each run.  
-Writes are atomic (temp file + rename) to reduce corruption risk.
+Each local file maps `relative/path.ext` → `s3://bucket/prefix/relative/path.ext`
+and is checked with `head_object` before upload: skip if the stored `sha256`
+metadata matches, else fall back to `size` + `mtime`, else upload and record
+`x-amz-meta-sha256` / `-size` / `-mtime`. A local cache
+(`.s3_rsync_cache.json`, override with `--cache`) maps path+size+mtime to
+SHA-256 so unchanged files aren't re-hashed; it's written atomically.

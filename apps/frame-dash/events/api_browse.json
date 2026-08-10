@@ -1,0 +1,15 @@
+{
+  "version": "2.0",
+  "rawPath": "/api/browse",
+  "rawQueryString": "prefix=photos/",
+  "queryStringParameters": {
+    "prefix": "photos/"
+  },
+  "requestContext": {
+    "http": {
+      "method": "GET",
+      "path": "/api/browse"
+    }
+  },
+  "isBase64Encoded": false
+}

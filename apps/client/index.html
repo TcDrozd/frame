@@ -38,7 +38,8 @@
         object-fit: contain;
       }
 
-      /* Optional: debug status overlay (set DISPLAY_STATUS=false in app.js for “no UI”) */
+      /* Boot/debug status overlay: auto-hides after the first photo renders
+         (STATUS_HIDE_MS in app.js; DISPLAY_STATUS=false for no UI at all) */
       #status {
         position: fixed;
         right: 10px;
@@ -68,6 +69,6 @@
     </div>
     <div id="status">booting…</div>
 
-    <script src="./app.js?v=2"></script>
+    <script src="./app.js?v=4"></script>
   </body>
 </html>

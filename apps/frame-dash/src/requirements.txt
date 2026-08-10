@@ -1,0 +1,5 @@
+# boto3/botocore ship with the Lambda Python runtime. cryptography backs the
+# CloudFront URL signer (RSA); it has native wheels, so build with
+# `sam build --use-container` (or on a linux/arm64 host) to get the
+# manylinux aarch64 build rather than a macOS one.
+cryptography

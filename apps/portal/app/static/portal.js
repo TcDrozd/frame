@@ -46,7 +46,7 @@ async function uploadOne(file) {
     filename: file.name,
   });
 
-  log(`Done: photo_id=${done.photo_id} published=${done.published} run_id=${done.publish_run_id}`);
+  log(`Done: photo_id=${done.photo_id}`);
 }
 
 document.getElementById("uploadBtn")?.addEventListener("click", async () => {
