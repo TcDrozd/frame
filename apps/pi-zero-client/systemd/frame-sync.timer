@@ -1,0 +1,24 @@
+[Unit]
+Description=Run frame sync periodically
+
+[Timer]
+# Wall-clock schedule: always has a next elapse point, independent of whether
+# frame-sync.service has ever been activated this boot. The previous config
+# used OnBootSec=30 + OnUnitActiveSec=10min; OnUnitActiveSec cannot arm until
+# the service has run at least once, so any boot where the OnBootSec trigger
+# was missed left the timer permanently "elapsed" with no next elapse.
+OnCalendar=*:0/10
+
+# Prompt first sync after boot, delayed enough for wifi + NTP to settle.
+# (This Pi has no RTC; timesyncd jumps the clock minutes into boot.)
+OnBootSec=2min
+
+# Catch up a run missed while powered down. Meaningful now that OnCalendar
+# is set - Persistent= only has an effect on calendar timers.
+Persistent=true
+
+AccuracySec=30s
+RandomizedDelaySec=20s
+
+[Install]
+WantedBy=timers.target

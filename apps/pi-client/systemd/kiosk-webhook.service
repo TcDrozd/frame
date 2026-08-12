@@ -1,0 +1,16 @@
+[Unit]
+Description=Kiosk Webhook API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=kiosk
+Group=kiosk
+# Token lives in /etc/kiosk/kiosk.env (mode 0600, root:kiosk), never in this unit.
+EnvironmentFile=/etc/kiosk/kiosk.env
+ExecStart=/home/kiosk/.venv/bin/python /opt/kiosk/kiosk-webhook.py
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

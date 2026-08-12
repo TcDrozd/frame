@@ -1,0 +1,2 @@
+- /client: frozen frame client (tagged releases like client-v1)
+- /publisher: manifest + S3 tooling (evolves independently)

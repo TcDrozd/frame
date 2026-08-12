@@ -1,0 +1,33 @@
+[Unit]
+Description=Frame (fb0 slideshow)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tcd
+Group=tcd
+
+Environment=FRAME_IMG_DIR=/opt/frame/images
+Environment=FRAME_SECONDS=10
+
+# Attach directly to tty1
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty
+StandardOutput=tty
+StandardError=journal
+
+# Run the script directly (no openvt)
+ExecStart=
+ExecStart=/usr/bin/python3 /opt/frame/viewer.py
+
+Restart=always
+RestartSec=2
+TimeoutStopSec=5
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

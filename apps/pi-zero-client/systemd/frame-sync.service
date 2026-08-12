@@ -1,0 +1,14 @@
+[Unit]
+Description=Frame (sync manifest and images)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=tcd
+Group=tcd
+EnvironmentFile=/opt/frame/.env
+ExecStart=/usr/bin/python3 /opt/frame/frame_sync.py
+
+[Install]
+WantedBy=multi-user.target

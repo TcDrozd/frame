@@ -1,0 +1,8 @@
+[Unit]
+Description=Watch kiosk URL file
+
+[Path]
+PathChanged=/var/lib/kiosk/url.txt
+
+[Install]
+WantedBy=multi-user.target
