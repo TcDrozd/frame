@@ -23,11 +23,20 @@ trevor-shared-photo-stream/manifest[.dev].json  ◄── clients poll (public r
 ```
 
 - **Playlists** live in DynamoDB; the ordered key list *is* the playback order.
-- **Publish** renders the playlist into the manifest with presigned GET URLs
-  (6h requested expiry) and writes it to the manifest key.
-- **Scheduled re-publish** refreshes presigned URLs every 2 hours, reusing the
-  `resolved_start_epoch` frozen at the first publish so all frames keep their
-  lockstep playback position. Only an explicit publish restarts the show.
+- **Publish** renders the playlist into the manifest and writes it to the
+  manifest key.
+- **Photo URLs** come in two flavours, chosen by the `PhotoUrlMode` parameter.
+  `presign` (template default) = S3 presigned GETs, 6h requested expiry, but
+  really capped by the Lambda role session — hence the 2-hourly refresh.
+  `cloudfront` = CloudFront signed URLs from our own RSA key pair
+  (`shared/signing.py`, private key in SSM), ~90-day TTLs with no role-session
+  cap, so the schedule can drop to `rate(7 days)`. The whole CloudFront side of
+  the template (distribution, key group, OAC) is conditional on
+  `CloudFrontPublicKeyPem` being non-empty.
+- **Scheduled re-publish** refreshes the URLs on `ScheduleExpression`
+  (template default every 2 hours), reusing the `resolved_start_epoch` frozen
+  at the first publish so all frames keep their lockstep playback position.
+  Only an explicit publish restarts the show.
 - **Auto-publish** (`AutoPublishMode=window`, default `off`): when no curated
   playlist is active, each scheduled run instead publishes an automatic
   selection — `AutoWindowSize` photos interleaved across top-level folders
@@ -65,8 +74,21 @@ fills up.)
 
 ```bash
 cd apps/frame-dash
-sam build && sam deploy            # dev: publishes to manifest.dev.json
+sam build && sam deploy            # writes the LIVE manifest.json - see below
 ./scripts/deploy_web.sh            # sync SPA + CloudFront invalidation
+```
+
+`samconfig.toml` pins only `ManifestKey`, the profile and the region. Every
+other stack parameter (`PhotoUrlMode`, `AutoPublishMode`, `AutoWindowSize`,
+`ScheduleExpression`, `CloudFrontPublicKeyPem`, `LegacyManifestKey`) is left to
+`sam deploy`, which carries unspecified parameters forward from the existing
+stack — so **the repo does not record what the live stack is actually
+running**. Check before you assume, especially before changing signing or
+schedule behaviour:
+
+```bash
+aws cloudformation describe-stacks --stack-name frame-dash \
+  --profile sunflower-dev --region us-east-1 --query 'Stacks[0].Parameters'
 ```
 
 After a stack change that alters outputs, refresh `web/js/config.js`:
@@ -97,25 +119,45 @@ From the repo root (stdlib unittest; needs boto3 — `apps/frame-dash/.venv` has
 apps/frame-dash/.venv/bin/python -m unittest discover -s apps/frame-dash/tests -v
 ```
 
-## Dev vs prod manifest
+## Manifest key: this stack is production
 
-The stack parameter `ManifestKey` defaults to **`manifest.dev.json`** so a
-deploy can never clobber the live manifest by accident. Point a test client at
-it with the client's query param:
+`samconfig.toml` `[default]` pins `ManifestKey=manifest.json`, so a plain
+`sam deploy` publishes straight to the manifest the frames poll. The SAM
+template's own default is still `manifest.dev.json` — a pre-cutover safety net
+that keeps an unconfigured deploy of the bare template off the live key — but
+samconfig overrides it. `[prod]` is now an identical alias for `[default]`,
+kept only so the old cutover command still works.
+
+To test without touching the live show, either publish with `dry_run` (renders
+the manifest and returns it without writing anything), or deploy against the
+dev key explicitly and flip back afterwards:
+
+```bash
+sam deploy --parameter-overrides ManifestKey=manifest.dev.json
+```
+
+Point a test client at the dev key with the client's query param:
 
 ```
 index.html?manifest=https://trevor-shared-photo-stream.s3.us-east-1.amazonaws.com/manifest.dev.json
 ```
 
-### Production cutover runbook
+### Production cutover (done)
 
-1. `sam deploy --config-env prod` — only override is `ManifestKey=manifest.json`.
-2. Open the dashboard, publish the chosen playlist, confirm on Status.
-3. Watch a real frame pick it up (clients poll hourly; or reload one).
-4. Retire whatever previously wrote `manifest.json` (old publisher cron /
-   publisher-api), so two writers never fight over the key.
-5. Optionally remove `manifest.dev.json` from the bucket policy's public-read
-   statement when dev testing is done.
+The cutover happened in `8091a8d`; the steps are kept here as the record of
+what it involved.
+
+1. `ManifestKey=manifest.json`, now pinned in samconfig `[default]` rather
+   than reached through a separate config env.
+2. Publish the chosen playlist from the dashboard, confirm on Status, and
+   watch a real frame pick it up (clients poll hourly; or reload one).
+3. Retire every other writer so two can never fight over the key:
+   `publisher-api` was deleted, the portal's publish path removed, and the
+   08:00Z cron that drove it disabled on the server.
+   `tools/publish_manifest.py` survives as a break-glass copy only.
+
+Still outstanding, optional: `manifest.dev.json` can come out of the bucket
+policy's public-read statement once dev testing is finished for good.
 
 Note: the bucket policy allows public `s3:GetObject` on `manifest.json` and
 `manifest.dev.json` only (clients fetch unauthenticated); photo objects stay

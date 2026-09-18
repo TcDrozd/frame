@@ -92,9 +92,17 @@ managed by the SAM stack; the stack only gets least-privilege IAM against it.
 The bucket policy allows public `s3:GetObject` on the manifest keys only —
 photos stay private and are reachable exclusively through presigned URLs.
 
-The stack parameter `ManifestKey` defaults to **`manifest.dev.json`**, so a dev
-deploy can never clobber the live show. Only `sam deploy --config-env prod`
-writes `manifest.json`.
+`samconfig.toml` pins `ManifestKey=manifest.json`: since the cutover this is a
+single **production** stack, and a plain `sam deploy` writes the manifest the
+frames poll. (The SAM template's own default is still `manifest.dev.json` — a
+pre-cutover safety net that samconfig now overrides.) A test deploy has to opt
+out explicitly with `--parameter-overrides ManifestKey=manifest.dev.json`.
+
+Only `ManifestKey`, the profile and the region are pinned in samconfig; the
+rest of the stack parameters — including `PhotoUrlMode` and `AutoPublishMode` —
+carry forward from the previous deploy, so the repo does not tell you what the
+live stack is running. `aws cloudformation describe-stacks --stack-name
+frame-dash --query 'Stacks[0].Parameters'` does.
 
 **The home server.** Source of truth is this repo, checked out as `~/frame`;
 runtime lives at `/opt/frame`. `tools/deploy/deploy_*.sh` rsync
@@ -128,7 +136,7 @@ months.
 
 ```bash
 # frame-dash (from apps/frame-dash/)
-sam build && sam deploy          # dev → manifest.dev.json
+sam build && sam deploy          # writes the LIVE manifest.json
 ./scripts/deploy_web.sh          # sync SPA to S3 + CloudFront invalidation
 
 # portal (from apps/portal/)

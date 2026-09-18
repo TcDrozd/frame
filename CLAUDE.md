@@ -39,10 +39,10 @@ Docker alternative: `docker compose up` (maps host 8002 → container 8000). Dev
 
 ### frame-dash (run from `apps/frame-dash/`)
 ```bash
-sam build && sam deploy      # dev: publishes to manifest.dev.json
+sam build && sam deploy      # PUBLISHES LIVE: samconfig pins ManifestKey=manifest.json
 ./scripts/deploy_web.sh      # sync SPA to S3 + CloudFront invalidation
 ```
-After a stack change that alters outputs, refresh `web/js/config.js` from `aws cloudformation describe-stacks --stack-name frame-dash`. `sam deploy --config-env prod` overrides `ManifestKey=manifest.json` (production cutover — see the runbook in `apps/frame-dash/README.md`).
+After a stack change that alters outputs, refresh `web/js/config.js` from `aws cloudformation describe-stacks --stack-name frame-dash`. There is no separate dev stack any more: `samconfig.toml` `[default]` overrides the template's `manifest.dev.json` default with `ManifestKey=manifest.json`, so a plain `sam deploy` points the schedule at the manifest real frames poll. Test against the dev key explicitly (`sam deploy --parameter-overrides ManifestKey=manifest.dev.json`, then flip back) or preview with a `dry_run` publish. `--config-env prod` still works but is now an identical alias for the default.
 
 ### Pi Zero client (`frame-zero`, reached with `ssh pi`)
 ```bash
@@ -73,7 +73,8 @@ apps/frame-dash/.venv/bin/python -m unittest discover -s apps/frame-dash/tests -
 
 ### frame-dash (AWS, account 084683516815)
 - `samconfig.toml` pins `profile = "frame-dash-deploy"`, a least-privilege IAM user (policy versioned at `deploy-policy.json`) that can only manage `frame-dash-*` resources. Admin operations (policy updates, Cognito user creation) use the `sunflower-dev` profile. Region is `us-east-1`.
-- **Key rule:** the stack parameter `ManifestKey` defaults to `manifest.dev.json` so a dev deploy can never clobber the live manifest; only the prod config env writes `manifest.json`.
+- **Key rule:** `samconfig.toml` pins `ManifestKey=manifest.json`, so a plain `sam deploy` writes the **live** manifest. The template's own default is still `manifest.dev.json`, but samconfig overrides it — post-cutover this is a single production stack. Opt out per deploy with `--parameter-overrides ManifestKey=manifest.dev.json`.
+- **The repo is not the source of truth for stack parameters.** samconfig pins only `ManifestKey` (plus profile/region); `PhotoUrlMode`, `AutoPublishMode`, `AutoWindowSize`, `ScheduleExpression`, `CloudFrontPublicKeyPem` and `LegacyManifestKey` are whatever the last deploy left, since `sam deploy` carries unspecified parameters forward from the existing stack. Read the live values before assuming: `aws cloudformation describe-stacks --stack-name frame-dash --query 'Stacks[0].Parameters'`.
 - Bucket policy allows public `s3:GetObject` on the manifest keys only; photos stay private behind presigned URLs.
 
 ## Conventions
