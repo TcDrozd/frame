@@ -9,16 +9,23 @@ that displays `apps/client` in a browser; it was too heavy for a Pi Zero and is
 kept only for provenance. Do not install it over this device.
 
 > **Provenance:** these files were recovered from the live `frame-zero` device
-> (`/opt/frame/`) on 2026-08-11 and are byte-for-byte what is running, except
-> `systemd/frame-sync.timer`, which is the fixed version deployed that day (see
-> [The sync timer bug](#the-sync-timer-bug)). `install.sh` does not exist yet —
-> installation is still the manual steps below.
+> (`/opt/frame/`) on 2026-08-11. `systemd/frame-sync.timer` is the fixed
+> version deployed that day (see [The sync timer bug](#the-sync-timer-bug)).
+> `install.sh` does not exist yet — installation is still the manual steps
+> below.
+>
+> **The device is behind this directory.** `frame_cache.py`, `frame_sync.py`
+> and `viewer.py` carry the cache-naming and pruning changes described in
+> [The image cache](#the-image-cache), which have not been deployed to
+> `frame-zero` (it has been unreachable since its `tailscaled` died on
+> 2026-01-17). Deploy all three together.
 
 ## Layout
 
 ```
 viewer.py                              always-running framebuffer slideshow
 frame_sync.py                          oneshot manifest + image syncer
+frame_cache.py                         cache filenames + pruning (both import it)
 .env.example                           copy to /opt/frame/.env
 systemd/frame-fb.service               viewer unit (owns tty1)
 systemd/frame-fb.service.d/override.conf   per-device slide seconds
@@ -66,10 +73,11 @@ The two halves are deliberately independent:
 ## Playback
 
 The authoritative order is `manifest.photos[]`. The viewer maps the selected
-entry's `id` directly to `/opt/frame/images/<id>`. It must not sort the image
-directory or derive the index from a filtered local list — if the image for the
-current index is missing it waits for the syncer to supply that exact file
-rather than shifting to another image and falling out of lockstep.
+entry to a file under `/opt/frame/images/` via `frame_cache.local_name()` (see
+[The image cache](#the-image-cache)). It must not sort the image directory or
+derive the index from a filtered local list — if the image for the current
+index is missing it waits for the syncer to supply that exact file rather than
+shifting to another image and falling out of lockstep.
 
 **Sync mode** (`mode: "sync"`) uses Unix epoch seconds:
 
@@ -88,6 +96,49 @@ copy the `* 1000` conversion `apps/client` needs for `Date.now()`.
 ordering and `slide_seconds` but advances locally and restarts at the first
 photo after a viewer restart. Manifest-driven, but *not* lockstep — use sync
 mode when several devices must show the same photo simultaneously.
+
+## The image cache
+
+`frame_cache.py` holds the one thing the two halves must agree on: the local
+filename for a manifest entry. Both import it, which is why they deploy
+together.
+
+**Names come from the S3 key, not the basename.** A photo cached as
+`photos/04_phone_modern/IMG_0274.jpeg` lands at:
+
+```text
+/opt/frame/images/<sha256(key)[:12]>_IMG_0274.jpeg
+```
+
+The syncer skips any photo whose file already exists, so the old
+basename-keyed scheme (`images/<id>`) meant two photos sharing a basename
+across folders collided: whichever cached first was displayed in place of the
+other, silently and permanently. `key` is exactly what manifest schema 2 added
+to make those distinguishable. Schema-1 manifests carry only `id` and keep the
+old ambiguity — nothing in such a manifest can tell the two apart. No manifest
+string is ever used as a path component, so a malformed or hostile manifest
+cannot write outside `images/`.
+
+**The cache is pruned to the current manifest.** With `AutoPublishMode=window`
+the publisher rotates a fresh ~50-photo selection (~90 MB) every UTC day, and
+the viewer only ever opens files the current manifest names, so anything else
+is dead weight on the SD card. Each sync run deletes images no entry claims,
+which also collects the pre-migration basename files on first run.
+
+**Pruning is skipped whenever a download failed.** Offline playback is the
+property that must never break: a run that loses the network half way through
+keeps the images the viewer is still playing from and retries on the next tick.
+A failed run also persists *neither* the ETag *nor* the content signature —
+both are early returns, so keeping them would make every run for the rest of
+the publish window skip straight past the photos that just failed. It records
+`last_failed` in `.sync_state.json` instead.
+
+Because a publish re-signs every URL, the content signature changes once per
+publish (~2h) rather than per sync tick (10 min); runs in between are 304s and
+touch nothing.
+
+Covered by `tests/test_frame_cache.py` and `tests/test_frame_sync.py`, which
+runs the syncer end to end against a local HTTP server.
 
 ## The sync timer bug
 
@@ -132,8 +183,9 @@ healthy one from the couch, because the viewer keeps playing from cache.
 
 ```bash
 systemctl list-timers frame-sync.timer     # NEXT must not be "-"
-cat /opt/frame/.sync_state.json            # last_sync should be recent
+cat /opt/frame/.sync_state.json            # last_sync recent, no last_failed
 journalctl -u frame-sync.service -n 20     # "Sync done" / "unchanged (304)"
+du -sh /opt/frame/images                   # ~1 window (~90 MB), not GBs
 ```
 
 ## Install
@@ -160,7 +212,7 @@ Install Pillow from apt (`python3-pil`) rather than building it on the Pi.
 
 ```bash
 sudo install -d -o tcd -g tcd /opt/frame /opt/frame/images /opt/frame/staging
-sudo install -o tcd -g tcd viewer.py frame_sync.py /opt/frame/
+sudo install -o tcd -g tcd viewer.py frame_sync.py frame_cache.py /opt/frame/
 sudo install -o tcd -g tcd .env.example /opt/frame/.env   # then edit
 sudo cp -r systemd/. /etc/systemd/system/
 sudo systemctl daemon-reload
