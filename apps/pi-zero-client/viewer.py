@@ -10,6 +10,8 @@ from typing import List, Tuple, Optional
 
 from PIL import Image
 
+import frame_cache
+
 FB = "/dev/fb0"
 DEFAULT_DIR = "/opt/frame/images"
 DEFAULT_SECONDS = 10
@@ -140,6 +142,22 @@ def seconds_until_next(start_epoch: int, slide_seconds: int, now: float) -> floa
     next_change = float(start_epoch) + float((steps + 1) * slide_seconds)
     return max(0.2, next_change - now)
 
+def resolve_image(img_dir: Path, entry) -> Optional[Path]:
+    """Local file for a manifest entry, or None if it is not cached yet.
+
+    Prefers the key-derived name the syncer writes. The id-based name is a
+    transitional fallback for a device whose viewer.py was updated ahead of
+    its frame_sync.py — the first successful sync fetches the window under
+    the new names and prunes the old ones.
+    """
+    for name in (frame_cache.local_name(entry), frame_cache.legacy_name(entry)):
+        if not name:
+            continue
+        path = img_dir / name
+        if path.exists():
+            return path
+    return None
+
 def list_images_ordered(img_dir: Path) -> List[Path]:
     exts = {".jpg", ".jpeg", ".png", ".bmp", ".gif"}  # gif will show first frame only
 
@@ -219,15 +237,14 @@ def main():
                     sleep_for = float(slide_s)
 
                 entry = photos[idx] if idx < n else None
-                photo_id = entry.get("id") if isinstance(entry, dict) else None
+                img_path = resolve_image(img_dir, entry)
 
-                if photo_id:
-                    img_path = img_dir / str(photo_id)
-                    if img_path.exists():
-                        render_to_framebuffer(img_path, fb_info, fb_fd, cached=cache)
-                    else:
-                        # Missing file: wait briefly and retry next loop
-                        time.sleep(0.5)
+                if img_path is not None:
+                    render_to_framebuffer(img_path, fb_info, fb_fd, cached=cache)
+                else:
+                    # Not cached yet: wait briefly and retry next loop rather
+                    # than showing a different photo and losing lockstep.
+                    time.sleep(0.5)
 
                 # Advance for inventory mode (sync mode index is computed)
                 if mode != "sync":

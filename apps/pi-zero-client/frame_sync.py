@@ -8,6 +8,8 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
+import frame_cache
+
 MANIFEST_URL = os.environ.get("FRAME_MANIFEST_URL", "").strip()
 
 LOCAL_MANIFEST = Path("/opt/frame/manifest.json")
@@ -94,8 +96,9 @@ def main():
 
     manifest = json.loads(raw.decode("utf-8"))
 
-    # Basic validation
-    if manifest.get("schema") != 1:
+    # Basic validation. Schema 2 is what the live publisher emits (it added
+    # the full `key` per photo); schema 1 is the older shape and still reads.
+    if manifest.get("schema") not in (1, 2):
         print(f"Unexpected schema={manifest.get('schema')}; continuing anyway.")
     photos = manifest.get("photos", [])
     if not isinstance(photos, list) or not photos:
@@ -112,39 +115,70 @@ def main():
         return
 
     # ---- download/update images ----
+    # Names come from frame_cache so the viewer looks for the same files;
+    # they are derived from each photo's full S3 key, not its basename (see
+    # frame_cache for why that distinction is load-bearing).
     downloaded = 0
     skipped = 0
     failed = 0
+    keep = set()
 
     for p in photos:
-        pid = str(p.get("id") or "").strip()
+        name = frame_cache.local_name(p)
         url = p.get("url")
 
-        if not pid or not url:
+        if not name or not url:
             skipped += 1
             continue
 
-        dest = IMAGES_DIR / pid
+        keep.add(name)
+        dest = IMAGES_DIR / name
         if dest.exists():
             # If your publisher later adds sha256, we can validate and refresh on mismatch.
             skipped += 1
             continue
 
         try:
-            tmp = STAGING_DIR / pid
+            tmp = STAGING_DIR / name
             download_to(tmp, url)
             tmp.replace(dest)
             downloaded += 1
         except Exception as e:
             failed += 1
-            print(f"Download failed for {pid}: {e}")
+            print(f"Download failed for {name}: {e}")
 
     # Write local manifest (so apply_manifest can read it consistently)
     LOCAL_MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n")
 
-    # Save sync state
-    state["etag"] = new_etag or etag
-    state["sig"] = sig
+    # ---- prune images no manifest entry claims ----
+    # The auto-publish window rotates ~50 fresh photos every UTC day and the
+    # viewer only ever opens files named by the current manifest, so
+    # everything else is dead weight on the SD card. Pruning is skipped
+    # unless the whole window is present: a run that lost the network half
+    # way through must not delete the images the viewer is still playing.
+    if failed == 0:
+        removed, freed = frame_cache.prune_dir(IMAGES_DIR, keep)
+        if removed:
+            print(f"Pruned {removed} image(s), freed {freed / 1e6:.1f} MB")
+    else:
+        print(f"{failed} download(s) failed; keeping existing images this run")
+
+    # Staging is per-run scratch. Clearing it collects the partial .tmp files
+    # a killed or timed-out download leaves behind.
+    frame_cache.prune_dir(STAGING_DIR, set())
+
+    # Save sync state. On failure, persist neither the ETag nor the
+    # signature: both are early-return short-circuits, so keeping them would
+    # make every run for the rest of this publish window skip straight past
+    # the photos that just failed.
+    if failed == 0:
+        state["etag"] = new_etag or etag
+        state["sig"] = sig
+        state.pop("last_failed", None)
+    else:
+        state.pop("etag", None)
+        state.pop("sig", None)
+        state["last_failed"] = failed
     state["last_sync"] = int(time.time())
     save_state(state)
 
