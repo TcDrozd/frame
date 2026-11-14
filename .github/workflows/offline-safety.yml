@@ -1,0 +1,160 @@
+name: Offline safety gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: offline-safety-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AWS_EC2_METADATA_DISABLED: 'true'
+  AWS_DEFAULT_REGION: us-east-1
+  # Deliberately fake identifiers for Stubber/mocked SDK calls, not secrets.
+  AWS_ACCESS_KEY_ID: offline-test-only
+  AWS_SECRET_ACCESS_KEY: offline-test-only
+  SAM_CLI_TELEMETRY: '0'
+
+jobs:
+  python-root:
+    name: Python 3.12 / root offline regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24.11.1'
+      # Pillow exercises actual image decoding in the Pi acquisition tests.
+      - run: python -m pip install boto3 Pillow
+      - run: python tools/safety/run_unittests.py tests
+
+  python-dashboard:
+    name: Python 3.12 / dashboard offline regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install boto3 -r apps/frame-dash/src/requirements.txt
+      - run: python tools/safety/run_unittests.py apps/frame-dash/tests
+
+  javascript:
+    name: Node 24 LTS / actual-source browser and dashboard regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24.11.1'
+          cache: npm
+          cache-dependency-path: apps/frame-dash/package-lock.json
+      - run: npm ci --ignore-scripts --prefix apps/frame-dash
+      # Explicit nonempty discovery: no zero-test success and no missing-path skip.
+      - name: Browser client regressions
+        run: |
+          test -s tests/test_browser_cache.js
+          node --test tests/test_browser_cache.js
+      - name: Dashboard DOM regressions
+        working-directory: apps/frame-dash
+        run: |
+          test -n "$(find tests/web -name '*.test.js' -print -quit)"
+          npm run test:web
+
+  browser-native:
+    name: Python 3.12 / native Chromium offline acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      # Override the global mock SDK identifiers: this job needs no AWS credentials.
+      AWS_ACCESS_KEY_ID: ''
+      AWS_SECRET_ACCESS_KEY: ''
+      AWS_SESSION_TOKEN: ''
+      AWS_PROFILE: ''
+      AWS_SHARED_CREDENTIALS_FILE: /dev/null
+      AWS_CONFIG_FILE: /dev/null
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      # Network is allowed only for dependency/browser provisioning, not acceptance.
+      - name: Install pinned Playwright and Chromium (package network)
+        run: |
+          python -m pip install playwright==1.53.0 Pillow
+          python -m playwright install --with-deps chromium
+      - name: Native browser acceptance (loopback fixtures only)
+        run: |
+          test -s tests/browser-native/run.py
+          test -s tests/browser-native/bridge.js
+          python tests/browser-native/run.py --artifacts "$RUNNER_TEMP/frame-browser-native"
+          python -c 'import json, os; from pathlib import Path; s = json.loads((Path(os.environ["RUNNER_TEMP"]) / "frame-browser-native/evidence.json").read_text())["summary"]; assert s["run"] > 0 and s["skipped"] == s["failures"] == s["errors"] == 0, s'
+      - name: Native acquisition checks (truncated bodies, native IDB abort)
+        run: |
+          test -s tests/browser-native/test_cache_acquisition.py
+          python tools/safety/run_unittests.py tests/browser-native
+      - name: Upload fixture-only native browser failure evidence
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-browser-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/frame-browser-native/evidence.json
+            ${{ runner.temp }}/frame-browser-native/test_*.zip
+          if-no-files-found: warn
+          retention-days: 3
+          include-hidden-files: false
+
+  infrastructure:
+    name: Deployment guards / SAM lint and ARM64 build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - uses: aws-actions/setup-sam@f84ec7d548307efafe33230528756de3c5841a17 # v2
+        with:
+          use-installer: true
+          version: '1.161.0'
+      - name: Fail-closed target and script regression tests
+        run: |
+          python tools/safety/run_unittests.py tools/safety/tests
+          python tools/safety/deploy_targets.py --env staging
+          for script in apps/frame-dash/scripts/*.sh tools/deploy/*.sh; do
+            bash -n "$script"
+          done
+          # Whole-tree whitespace check (a plain `git diff --check` is a no-op on a clean checkout).
+          # Markdown trailing double-spaces are intentional hard line breaks; legacy/ is archived reference.
+          git diff --check "$(git hash-object -t tree /dev/null)" HEAD -- . ':(exclude)*.md' ':(exclude)legacy/**'
+      - name: SAM validation (including CloudFormation lint)
+        run: |
+          printf 'version = 0.1\n' > "$RUNNER_TEMP/frame-offline-sam.toml"
+          sam validate --lint --template-file apps/frame-dash/template.yaml --config-file "$RUNNER_TEMP/frame-offline-sam.toml" --region us-east-1
+      - name: Build Python 3.12 ARM64 deployment artifact (never deploy)
+        run: |
+          printf 'version = 0.1\n' > "$RUNNER_TEMP/frame-offline-sam.toml"
+          sam build --template-file apps/frame-dash/template.yaml --config-file "$RUNNER_TEMP/frame-offline-sam.toml" --build-dir "$RUNNER_TEMP/frame-build" --no-cached

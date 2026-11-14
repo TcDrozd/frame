@@ -57,6 +57,45 @@ only (fetch, IndexedDB, DOM).
   `etag` change re-downloads the photo in place
 - Cache deletions happen only **after** replacement downloads land, so a
   mid-sync network drop can never shrink the cache
+- Downloads run up to 4 at a time, but decode-validation
+  (`createImageBitmap` plus the JPEG completeness check) runs **one photo at
+  a time**: a 50 MB photo can decode to ~190 MB, and four concurrent decodes
+  could exhaust an Android tablet's memory
+- Each decode-validation is bounded by `DECODE_TIMEOUT_MS` (30 s). A decoder
+  that never settles would otherwise wedge that one-at-a-time queue (and the
+  sync) until reload; a timeout is a **transient** failure — last good
+  manifest kept, no permanent-failure record, retried on the next sync. The
+  abandoned decode may still hold memory until the browser finishes or drops it
+
+### Cache database and rollbacks
+The cache is IndexedDB `SharedPhotoFrameDB`, version `DB_VER = 2` (v2 added
+the `staging` store). IndexedDB cannot be opened at a version lower than the
+one on disk, and the already-released v1 `app.js` turns that `VersionError`
+into `fatal:` and plays nothing — not even cached photos. That code cannot be
+changed after the fact, so:
+
+- **Any rollback build must keep `DB_VER >= 2`.** Rolling back to the
+  original v1 `app.js` bricks every kiosk that has run v2. Roll back by
+  shipping old behavior with `DB_VER` left at (or above) the current value.
+- From v2 on, `openDB()` tolerates a newer on-disk version: on `VersionError`
+  it reopens `indexedDB.open(DB_NAME)` without a version and continues if
+  the `photos`, `meta` and `staging` stores exist (otherwise it fails with a
+  message naming the missing stores). Future version bumps therefore cannot
+  brick a rolled-back v2+ build.
+- `onblocked` shows a status message, and every handle closes itself and
+  reloads the page on `versionchange`, so an older tab never blocks a newer
+  build's upgrade.
+
+### Unplayable photos (holes)
+A photo that cannot become playable by retrying — undecodable/unsupported
+bytes, a body over 50 MB, or an entry with no `url` — is a permanent failure
+for its `(key, etag)`: the slot stays in the play order as a hole (previous
+frame held), and it is retried on a 30 min doubling backoff capped at 24 h.
+A record whose `retryAt` is further away than the cap (written under a wrong
+clock) counts as expired; a URL-less record stops applying once the entry
+carries a URL. A schema-1 `images: [id]` manifest has no URLs, so it promotes
+only over ids already cached (the rest are holes) and is otherwise ignored
+while the last good show keeps playing.
 
 ### Offline Behavior
 - Fully offline-capable once photos are cached

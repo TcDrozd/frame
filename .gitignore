@@ -110,3 +110,6 @@ venv/
 *.tgz
 *.tar.gz
 *.zip
+
+# Local coding-agent state
+.claude-state

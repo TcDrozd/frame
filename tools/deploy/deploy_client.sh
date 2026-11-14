@@ -1,9 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# These runtime deployments overwrite files with rsync --delete.
+if [[ "${FRAME_PRODUCTION_INTENT:-}" != frame-runtime || "$#" != 1 || "$1" != --apply ]]; then
+  echo 'Refused: production intent FRAME_PRODUCTION_INTENT=frame-runtime and --apply required.' >&2
+  exit 2
+fi
 
 SRC="${SRC:-$HOME/frame/apps/client}"
 
+# rsync --delete mirrors SRC: an empty or wrong SRC would wipe DST. Require a
+# real checkout of this repository containing the expected entry file.
+[[ -n "$SRC" && -f "$SRC/app.js" ]] || { echo "Refused: SRC must contain app.js: ${SRC:-<empty>}" >&2; exit 2; }
+git -C "$SRC" rev-parse --show-toplevel >/dev/null 2>&1 || { echo "Refused: SRC is not inside a git checkout: $SRC" >&2; exit 2; }
+
 TARGET="${TARGET:-v2}"  # v2 (default) or v1
+[[ "$TARGET" == v1 || "$TARGET" == v2 ]] || { echo 'Refused: unknown TARGET' >&2; exit 2; }
 if [[ "$TARGET" == "v1" ]]; then
   DST="/opt/shared-photo-frame/client"
 else

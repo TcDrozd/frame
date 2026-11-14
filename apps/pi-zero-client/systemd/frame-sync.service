@@ -9,6 +9,10 @@ User=tcd
 Group=tcd
 EnvironmentFile=/opt/frame/.env
 ExecStart=/usr/bin/python3 /opt/frame/frame_sync.py
+# Under memory pressure the kernel should kill this oneshot (it retries on
+# the next tick and its crash marker escalates a killer photo to a hole)
+# rather than the always-running viewer that keeps the last show on screen.
+OOMScoreAdjust=500
 
 [Install]
 WantedBy=multi-user.target

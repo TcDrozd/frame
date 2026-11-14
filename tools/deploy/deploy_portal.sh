@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# These runtime deployments overwrite files with rsync --delete.
+if [[ "${FRAME_PRODUCTION_INTENT:-}" != frame-runtime || "$#" != 1 || "$1" != --apply ]]; then
+  echo 'Refused: production intent FRAME_PRODUCTION_INTENT=frame-runtime and --apply required.' >&2
+  exit 2
+fi
 
 SRC="${SRC:-$HOME/frame/apps/portal}"
+
+# rsync --delete mirrors SRC: an empty or wrong SRC would wipe DST. Require a
+# real checkout of this repository containing the expected entry file.
+[[ -n "$SRC" && -f "$SRC/app/main.py" ]] || { echo "Refused: SRC must contain app/main.py: ${SRC:-<empty>}" >&2; exit 2; }
+git -C "$SRC" rev-parse --show-toplevel >/dev/null 2>&1 || { echo "Refused: SRC is not inside a git checkout: $SRC" >&2; exit 2; }
 DST="${DST:-/opt/frame/apps/portal}"
+[[ "$DST" == /opt/frame/apps/portal ]] || { echo 'Refused: portal destination must be /opt/frame/apps/portal' >&2; exit 2; }
 VERSION_FILE="/opt/frame/VERSION"
 
 # rsync exclusions: keep repo/dev junk out of /opt

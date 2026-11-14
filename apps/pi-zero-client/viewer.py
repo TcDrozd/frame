@@ -79,12 +79,16 @@ def render_to_framebuffer(img_path: Path, fb_info, fb_fd, cached: Optional[dict]
         fb_fd.flush()
         return
 
-    im = Image.open(img_path)
-    im.load()  # force decode now
-
-    # Resize + letterbox
-    new_w, new_h, x, y = fit_contain(im.width, im.height, sw, sh)
-    im = im.resize((new_w, new_h), Image.LANCZOS)
+    # Header-only guard first: an oversized PNG/WebP/GIF raises here, before
+    # any decode, so render_safely holds the previous frame instead of the
+    # kernel OOM-killing the viewer (non-JPEG formats ignore draft()).
+    with frame_cache.open_image(img_path) as source:
+        # JPEG DCT scaling straight to >= screen size: a 48 MP photo decodes
+        # at 1/4-1/8 scale instead of allocating ~150 MB of full-res pixels.
+        source.draft("RGB", (sw, sh))
+        source.load()  # complete decode before touching the displayed frame
+        new_w, new_h, x, y = fit_contain(source.width, source.height, sw, sh)
+        im = source.resize((new_w, new_h), Image.LANCZOS)
 
     canvas = Image.new("RGB", (sw, sh), (0, 0, 0))
     canvas.paste(im, (x, y))
@@ -102,10 +106,39 @@ def render_to_framebuffer(img_path: Path, fb_info, fb_fd, cached: Optional[dict]
     fb_fd.flush()
 
     if cached is not None:
-        # Keep cache bounded
-        if len(cached) > 50:
-            cached.clear()
-        cached[cache_key] = buf
+        _remember(cached, cache_key, buf)
+
+
+# Rendered framebuffers kept for repeats. Slides last ~23 minutes, so a hit is
+# rare and worth little; each entry is a full frame (1080p: ~8.3 MB at 32 bpp,
+# ~4.1 MB at 16 bpp). Capped by bytes, not entries: the old 51-entry cap could
+# hold ~210-423 MB of a ~440 MB device.
+RENDER_CACHE_MAX_BYTES = 16 * 1024 * 1024
+
+
+def _remember(cached: dict, key, buf: bytes) -> None:
+    """Insert `buf`, evicting oldest entries so the total stays under the cap."""
+    cached.pop(key, None)
+    if len(buf) > RENDER_CACHE_MAX_BYTES:
+        return
+    total = sum(len(v) for v in cached.values())
+    while cached and total + len(buf) > RENDER_CACHE_MAX_BYTES:
+        total -= len(cached.pop(next(iter(cached))))
+    cached[key] = buf
+
+def render_safely(img_path, fb_info, fb_fd, cached=None):
+    """A damaged/disappearing asset must not terminate the playback loop.
+
+    Rendering builds the whole buffer before writing, so decode/resize failures
+    leave the previously displayed image intact (hardware I/O failures may not).
+    """
+    try:
+        render_to_framebuffer(img_path, fb_info, fb_fd, cached)
+        return True
+    except Exception as error:
+        print(f"Render failed for {img_path}: {error}", flush=True)
+        return False
+
 
 manifest = None
 manifest_mtime = 0.0
@@ -114,12 +147,15 @@ def load_manifest_if_changed():
     global manifest, manifest_mtime
     try:
         st = MANIFEST_FILE.stat()
-        if st.st_mtime != manifest_mtime:
-            manifest = json.loads(MANIFEST_FILE.read_text())
-            manifest_mtime = st.st_mtime
-    except FileNotFoundError:
-        manifest = None
-        manifest_mtime = 0.0
+        stamp = (st.st_mtime_ns, st.st_size, st.st_ino)
+        if stamp != manifest_mtime:
+            candidate = json.loads(MANIFEST_FILE.read_text())
+            if frame_cache.valid_manifest(candidate):
+                manifest = candidate
+                manifest_mtime = stamp
+    except (OSError, ValueError, TypeError):
+        # A bad/transient read must not kill playback or poison the retry stamp.
+        pass
     return manifest
 
 def compute_sync_index(start_epoch: int, slide_seconds: int, n: int, now: float) -> int:
@@ -150,7 +186,9 @@ def resolve_image(img_dir: Path, entry) -> Optional[Path]:
     its frame_sync.py — the first successful sync fetches the window under
     the new names and prunes the old ones.
     """
-    for name in (frame_cache.local_name(entry), frame_cache.legacy_name(entry)):
+    unversioned = {k: v for k, v in entry.items() if k != "etag"} if isinstance(entry, dict) else entry
+    for name in (frame_cache.local_name(entry), frame_cache.local_name(unversioned),
+                 frame_cache.legacy_name(entry)):
         if not name:
             continue
         path = img_dir / name
@@ -159,7 +197,7 @@ def resolve_image(img_dir: Path, entry) -> Optional[Path]:
     return None
 
 def list_images_ordered(img_dir: Path) -> List[Path]:
-    exts = {".jpg", ".jpeg", ".png", ".bmp", ".gif"}  # gif will show first frame only
+    exts = {".jpg", ".jpeg", ".png", ".webp", ".gif"}  # gif shows first frame only
 
     # If an order file exists, follow it
     if ORDER_FILE.exists():
@@ -240,7 +278,7 @@ def main():
                 img_path = resolve_image(img_dir, entry)
 
                 if img_path is not None:
-                    render_to_framebuffer(img_path, fb_info, fb_fd, cached=cache)
+                    render_safely(img_path, fb_info, fb_fd, cached=cache)
                 else:
                     # Not cached yet: wait briefly and retry next loop rather
                     # than showing a different photo and losing lockstep.
@@ -260,7 +298,8 @@ def main():
                     continue
 
                 path = paths[idx % len(paths)]
-                render_to_framebuffer(path, fb_info, fb_fd, cached=cache)
+                if not render_safely(path, fb_info, fb_fd, cached=cache):
+                    paths = []  # file vanished/broke: rescan the directory next time
                 idx += 1
                 sleep_for = slide_seconds_default
 
