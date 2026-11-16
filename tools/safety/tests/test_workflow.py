@@ -69,6 +69,20 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("retention-days: 3", upload)
         self.assertIn("include-hidden-files: false", upload)
 
+    def test_js_browser_gate_provisions_its_python_fixture_dependency(self):
+        workflow = (ROOT / ".github/workflows/offline-safety.yml").read_text()
+        javascript = workflow.split("\n  javascript:\n", 1)[1].split("\n  browser-native:\n", 1)[0]
+        setup = javascript.index("uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065")
+        install = javascript.index('"${{ steps.python.outputs.python-path }}" -m pip install Pillow==11.1.0')
+        browser = javascript.index("      - name: Browser client regressions\n")
+        self.assertLess(setup, install)
+        self.assertLess(install, browser)
+        self.assertIn("id: python\n        with:\n          python-version: '3.12'", javascript[setup:install])
+        browser_step = javascript[browser:].split("      - name: Dashboard DOM regressions", 1)[0]
+        self.assertIn("PYTHON: ${{ steps.python.outputs.python-path }}", browser_step)
+        self.assertIn("node --test tests/test_browser_cache.js", browser_step)
+        self.assertNotIn("continue-on-error", javascript)
+
     def test_js_gates_require_real_nonempty_test_paths(self):
         workflow = (ROOT / ".github/workflows/offline-safety.yml").read_text()
         self.assertIn("test -s tests/test_browser_cache.js", workflow)
