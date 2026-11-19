@@ -18,7 +18,7 @@ V2 monorepo for the Shared Photo Frame ecosystem. Everything exists to produce a
 
 **Consumer host — `apps/pi-client`:** Raspberry Pi appliance that displays `apps/client` in a browser (X + Openbox + fullscreen Chromium on boot, systemd units, token-auth Flask webhook writing `/var/lib/kiosk/url.txt`, watched by a `.path` unit that restarts the browser). It runs the client unmodified and knows nothing about manifests — a *host*, not a client. **Not what runs on `frame-zero`** (that is `apps/pi-zero-client`); the browser stack was too heavy for a Pi Zero, so this is kept for provenance and stronger hardware — never install it over the live Pi Zero. Vendored from the separate private repo `TcDrozd/pi-dash` @ `00c69ad`; four upstream bugs were fixed on the way in and `install.sh` has not been re-run on hardware (see its README). Vendored as plain files, not a submodule.
 
-`legacy/` is archived v1 source — reference only, never deploy from it. Vendored as plain files (`legacy/v1/shared-photo-frame` was a broken gitlink until 2026-08-10; see `legacy/README.md` — never `git add` a directory containing a `.git/`). Note the naming trap: the commit under `legacy/v1/` is tagged `client-v2.0.0` upstream. `tools/publish_manifest.py` is the retired v1 publisher CLI, kept only as a break-glass copy (its `--inject-placement random` path has a known `NameError`). The v1 `apps/publisher-api` was deleted (it exposed an unauthenticated publish endpoint); see git history.
+`legacy/` is archived v1 source — reference only, never deploy from it. Vendored as plain files (`legacy/v1/shared-photo-frame` was a broken gitlink until 2026-08-10; see `legacy/README.md` — never `git add` a directory containing a `.git/`). Note the naming trap: the commit under `legacy/v1/` is tagged `client-v2.0.0` upstream. `tools/publish_manifest.py` is the retired v1 publisher CLI (its `--inject-placement random` path has a known `NameError`). It is an **unconditional writer**: once the fenced publisher is live it must not be run — it bypasses publication fencing and can overwrite a newer show. The v1 `apps/publisher-api` was deleted (it exposed an unauthenticated publish endpoint); see git history.
 
 ## Commands
 
@@ -37,12 +37,15 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 Docker alternative: `docker compose up` (maps host 8002 → container 8000). Dev DB is `./data/portal.db` (gitignored).
 
-### frame-dash (run from `apps/frame-dash/`)
+### frame-dash (run from repo root; deploys are gated)
 ```bash
-sam build && sam deploy      # PUBLISHES LIVE: samconfig pins ManifestKey=manifest.json
-./scripts/deploy_web.sh      # sync SPA to S3 + CloudFront invalidation
+# Isolated staging only after prerequisites in docs/milestone-a-staging.md:
+FRAME_ENV=staging bash apps/frame-dash/scripts/deploy_stack.sh --apply
+# Production: separate approval, live-state snapshot and change-set review required.
+FRAME_ENV=prod FRAME_PRODUCTION_INTENT=frame-dash bash apps/frame-dash/scripts/deploy_stack.sh --apply
+FRAME_ENV=prod FRAME_PRODUCTION_INTENT=frame-dash bash apps/frame-dash/scripts/deploy_web.sh --apply
 ```
-After a stack change that alters outputs, refresh `web/js/config.js` from `aws cloudformation describe-stacks --stack-name frame-dash`. There is no separate dev stack any more: `samconfig.toml` `[default]` overrides the template's `manifest.dev.json` default with `ManifestKey=manifest.json`, so a plain `sam deploy` points the schedule at the manifest real frames poll. Test against the dev key explicitly (`sam deploy --parameter-overrides ManifestKey=manifest.dev.json`, then flip back) or preview with a `dry_run` publish. `--config-env prod` still works but is now an identical alias for the default.
+Never use bare `sam deploy` or `sam sync` to bypass the gates. Never repoint the production stack at `manifest.dev.json` as a test: it shares production's table and schedule and stops live refreshes. Use the isolated staging stack or non-mutating `dry_run` preview. Generate staging web config in a scratch tree as described in the staging runbook.
 
 ### Pi Zero client (`frame-zero`, reached with `ssh pi`)
 ```bash
@@ -53,27 +56,30 @@ sudo systemctl start frame-sync.service  # force a sync now
 ```
 Deployed by hand to `/opt/frame` (owned by the service user), not by `tools/deploy/`. Remote access needs a subnet router advertising the device's VLAN — its own `tailscaled` has been dead since 2026-01-17.
 
-### Tests (run from repo root; stdlib `unittest` with `botocore.stub.Stubber`, no live AWS)
+### Tests (repo root; offline, no live AWS)
+Use Python 3.12 with `boto3`, `Pillow`, and `apps/frame-dash/src/requirements.txt`; Node 24 LTS. The safety runner blocks non-loopback sockets and rejects zero or skipped tests.
 ```bash
-# root tests (import tools.s3_rsync, hence repo-root cwd)
-python3 -m unittest discover -s tests -v
-python3 -m unittest tests.test_s3_rsync.TestS3Rsync.test_nested_path_key_mapping   # single test
-
-# frame-dash tests (its .venv has boto3)
-apps/frame-dash/.venv/bin/python -m unittest discover -s apps/frame-dash/tests -v
+python3 tools/safety/run_unittests.py tests
+python3 tools/safety/run_unittests.py apps/frame-dash/tests
+python3 tools/safety/run_unittests.py tools/safety/tests
+npm ci --ignore-scripts --prefix apps/frame-dash && npm run test:web --prefix apps/frame-dash
+node --test tests/test_browser_cache.js
+python3 tests/browser-native/run.py  # requires Playwright and Chromium
 ```
+See `docs/milestone-a-ci.md` for the five credential-free CI jobs.
 
 ## Deployment model (matters when editing paths/scripts)
 
 ### Server apps (portal, client)
 - Source of truth is this repo (checked out as `~/frame` on the server); runtime is `/opt/frame`.
-- `tools/deploy/deploy_*.sh` rsync `apps/<app>` → `/opt/frame/apps/<app>` with `--delete`, excluding `.env`, `data/`, venvs.
+- `tools/deploy/deploy_*.sh` rsync `apps/<app>` → `/opt/frame/apps/<app>` with `--delete`, excluding `.env`, `data/`, venvs. They require `FRAME_PRODUCTION_INTENT=frame-runtime` and `--apply`.
 - **Key rule:** deploy may freely replace `/opt/frame/apps/*` but must never touch `/opt/frame/var/*` (prod DB, selections, uploads) or `/opt/frame/venv/*`.
 - Prod paths: portal DB at `/opt/frame/var/portal/portal.db`.
 
 ### frame-dash (AWS, account 084683516815)
 - `samconfig.toml` pins `profile = "frame-dash-deploy"`, a least-privilege IAM user (policy versioned at `deploy-policy.json`) that can only manage `frame-dash-*` resources. Admin operations (policy updates, Cognito user creation) use the `sunflower-dev` profile. Region is `us-east-1`.
-- **Key rule:** `samconfig.toml` pins `ManifestKey=manifest.json`, so a plain `sam deploy` writes the **live** manifest. The template's own default is still `manifest.dev.json`, but samconfig overrides it — post-cutover this is a single production stack. Opt out per deploy with `--parameter-overrides ManifestKey=manifest.dev.json`.
+- **Key rule:** `[default]`/`[prod]` pin the live `manifest.json`; `frame-dash` is production. `[staging]` targets the separate `frame-dash-staging` stack. Deploy only through the gated wrappers and `docs/milestone-a-staging.md`, never by switching the production manifest key.
+- **Milestone A cutover is not done.** The fenced publisher requires draining legacy/unconditional writers, resolving `LegacyManifestKey`, an approved first-publish bootstrap plan, and retaining `.publications/*` objects and receipts. See `apps/frame-dash/src/SAFETY.md`.
 - **The repo is not the source of truth for stack parameters.** samconfig pins only `ManifestKey` (plus profile/region); `PhotoUrlMode`, `AutoPublishMode`, `AutoWindowSize`, `ScheduleExpression`, `CloudFrontPublicKeyPem` and `LegacyManifestKey` are whatever the last deploy left, since `sam deploy` carries unspecified parameters forward from the existing stack. Read the live values before assuming: `aws cloudformation describe-stacks --stack-name frame-dash --query 'Stacks[0].Parameters'`.
 - Bucket policy allows public `s3:GetObject` on the manifest keys only; photos stay private behind presigned URLs.
 

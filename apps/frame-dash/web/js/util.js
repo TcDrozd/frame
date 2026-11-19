@@ -1,7 +1,8 @@
 export function esc(text) {
-  const div = document.createElement("div");
-  div.textContent = text == null ? "" : String(text);
-  return div.innerHTML;
+  // Safe for text AND quoted HTML attributes. Never use for script/URL encoding.
+  return String(text ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[char]);
 }
 
 export function basename(key) {

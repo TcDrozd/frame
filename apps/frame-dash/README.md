@@ -70,13 +70,20 @@ aws iam create-policy-version \
 (IAM keeps max 5 versions; delete old ones with `delete-policy-version` if it
 fills up.)
 
-## Deploy
+## Milestone A safety branch and deployment gate
 
-```bash
-cd apps/frame-dash
-sam build && sam deploy            # writes the LIVE manifest.json - see below
-./scripts/deploy_web.sh            # sync SPA + CloudFront invalidation
-```
+The safety changes are not deployed. Published snapshots, conditional publication,
+revision-bound edits and recovery introduce cutover requirements; do not deploy
+this branch over the existing publisher without the reviewed migration procedure.
+See [backend contracts](src/SAFETY.md), [isolated staging and approval gates](../../docs/milestone-a-staging.md)
+and [offline CI](../../docs/milestone-a-ci.md).
+
+From the repository root, the approval-gated staging entry point is
+`FRAME_ENV=staging bash apps/frame-dash/scripts/deploy_stack.sh --apply`.
+This creates/updates AWS resources and must not be executed until staging bucket,
+IAM, billing and change-set approval prerequisites have been satisfied. Web
+publication has a separate validated staging configuration and explicit gate.
+Do not use bare SAM deployment or swap the production stack to a dev manifest key.
 
 `samconfig.toml` pins only `ManifestKey`, the profile and the region. Every
 other stack parameter (`PhotoUrlMode`, `AutoPublishMode`, `AutoWindowSize`,
@@ -128,19 +135,11 @@ that keeps an unconfigured deploy of the bare template off the live key — but
 samconfig overrides it. `[prod]` is now an identical alias for `[default]`,
 kept only so the old cutover command still works.
 
-To test without touching the live show, either publish with `dry_run` (renders
-the manifest and returns it without writing anything), or deploy against the
-dev key explicitly and flip back afterwards:
-
-```bash
-sam deploy --parameter-overrides ManifestKey=manifest.dev.json
-```
-
-Point a test client at the dev key with the client's query param:
-
-```
-index.html?manifest=https://trevor-shared-photo-stream.s3.us-east-1.amazonaws.com/manifest.dev.json
-```
+Use a non-mutating `dry_run` to preview a draft. Integration testing requires
+the separately named stack, bucket, table, identities and disabled schedule in
+[the staging runbook](../../docs/milestone-a-staging.md). Repointing production
+to `manifest.dev.json` is not isolation and can stop live refreshes. Never point
+real frames at staging.
 
 ### Production cutover (done)
 

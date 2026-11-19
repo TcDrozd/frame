@@ -28,10 +28,28 @@ MEDIA_EXTENSIONS = {
     ".webm",
 }
 
+# Formats BOTH frame clients can decode: the browser kiosk (platform image
+# decoder) and the Pi Zero client (Pillow). Anything else -- HEIC/HEIF, TIFF,
+# BMP, video -- must never reach a manifest: one undecodable entry used to block
+# every subsequent update on both clients. Phone originals need a converted
+# display derivative (Milestone B upload processing), not a wider allowlist.
+DISPLAYABLE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+
 
 def is_media_key(key: str) -> bool:
     lowered = key.lower()
     return any(lowered.endswith(ext) for ext in MEDIA_EXTENSIONS)
+
+
+def is_displayable_key(key: str) -> bool:
+    """True only for a real filename with a displayable extension.
+
+    Classification only: trailing whitespace is ignored when reading the
+    extension, but callers must still store/publish the key byte-for-byte.
+    """
+    name = key.rsplit("/", 1)[-1].rstrip().lower()
+    stem, dot, ext = name.rpartition(".")
+    return bool(dot and stem) and "." + ext in DISPLAYABLE_EXTENSIONS
 
 
 def parent_prefix(prefix: str) -> str:
@@ -75,7 +93,7 @@ def browse(
     photos = []
     for item in page.get("Contents", []):
         key = item.get("Key")
-        if not key or key == prefix or not is_media_key(key):
+        if not key or key == prefix or not is_displayable_key(key):
             continue
         photos.append(
             {

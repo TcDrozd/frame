@@ -16,6 +16,17 @@ Description: >
 # and is NOT created by this stack - it is only referenced by name.
 # ------------------------------------------------------------------------
 Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+
+  ScheduleState:
+    Type: String
+    Default: ENABLED
+    AllowedValues: [ENABLED, DISABLED]
+    Description: Staging must remain DISABLED until separately reviewed.
+
   PhotosBucketName:
     Type: String
     Default: trevor-shared-photo-stream
@@ -86,9 +97,10 @@ Parameters:
     Type: String
     Default: ""
     Description: >
-      When set, every publish also writes the manifest to this key —
-      migration aid so old clients keep working while frames are repointed
-      to the CloudFront manifest path. Clear it after the grace period.
+      Legacy dual-write migration aid. The fenced publisher REJECTS a
+      distinct value (two independently polled keys cannot be switched
+      atomically). Keep empty or equal to ManifestKey; resolve consumers of
+      any old key before enabling the fenced publisher.
 
   AutoPublishMode:
     Type: String
@@ -111,6 +123,29 @@ Parameters:
     Type: String
     Default: frame-dash-tcd
     Description: Globally-unique prefix for the Cognito hosted UI domain.
+
+Rules:
+  StagingIsolation:
+    RuleCondition: !Equals [!Ref Environment, staging]
+    Assertions:
+      - Assert: !Equals [!Ref PhotosBucketName, frame-dash-staging-photos-084683516815]
+        AssertDescription: Staging must use its separately provisioned nonproduction bucket.
+      - Assert: !Equals [!Ref ManifestKey, staging/manifest.json]
+        AssertDescription: Staging must use its own manifest key.
+      - Assert: !Equals [!Ref LegacyManifestKey, ""]
+        AssertDescription: Staging must not write a legacy manifest.
+      - Assert: !Equals [!Ref CognitoDomainPrefix, frame-dash-staging-084683516815]
+        AssertDescription: Staging must have a separate Cognito domain.
+      - Assert: !Equals [!Ref ScheduleState, DISABLED]
+        AssertDescription: Staging scheduling is disabled.
+      - Assert: !Equals [!Ref AutoPublishMode, "off"]
+        AssertDescription: Staging automatic selection is disabled.
+      - Assert: !Equals [!Ref PhotoUrlMode, presign]
+        AssertDescription: Staging must not use production CloudFront signing.
+      - Assert: !Equals [!Ref CloudFrontPublicKeyPem, ""]
+        AssertDescription: Staging does not provision a photos CDN.
+      - Assert: !Equals [!Ref PrivateKeySsmName, /frame-dash-staging/cf-signing-key]
+        AssertDescription: Never reference the production signing secret.
 
 Conditions:
   HasSigningKey: !Not [!Equals [!Ref CloudFrontPublicKeyPem, ""]]
@@ -216,7 +251,9 @@ Resources:
   # ------------------------------------------------------------------------
   # API Lambda: one function, all /api/* routes, tiny router inside.
   # IAM below is least-privilege against the PRE-EXISTING photo bucket:
-  # list/read only under PhotosPrefix, write only the manifest key.
+  # list/read photos under PhotosPrefix; Get/Put canonical + private staged
+  # publications only. No S3 delete grant; the pre-existing bucket's policy
+  # and retention controls remain an operator cutover prerequisite.
   # ------------------------------------------------------------------------
   ApiFunction:
     Type: AWS::Serverless::Function
@@ -261,6 +298,22 @@ Resources:
               Condition:
                 StringLike:
                   s3:prefix: !Sub ${PhotosPrefix}*
+            # Exact-key listing only: no bucket-wide enumeration. A scoped
+            # s3:prefix condition is NOT proof that an absent HEAD returns 404;
+            # bootstrap canonical or verify 404 visibility before first publish.
+            - Sid: ListCanonicalManifest
+              Effect: Allow
+              Action: s3:ListBucket
+              Resource: !Sub arn:aws:s3:::${PhotosBucketName}
+              Condition:
+                StringEquals:
+                  s3:prefix: !Ref ManifestKey
+            - Sid: PublicationTransaction
+              Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:ConditionCheckItem
+              Resource: !GetAtt PlaylistTable.Arn
             - Sid: ReadPhotos
               Effect: Allow
               Action: s3:GetObject
@@ -272,6 +325,7 @@ Resources:
                 - s3:PutObject
               Resource:
                 - !Sub arn:aws:s3:::${PhotosBucketName}/${ManifestKey}
+                - !Sub arn:aws:s3:::${PhotosBucketName}/${ManifestKey}.publications/*
                 - !If
                   - HasLegacyManifestKey
                   - !Sub arn:aws:s3:::${PhotosBucketName}/${LegacyManifestKey}
@@ -316,12 +370,12 @@ Resources:
             # prefix).
             Name: !Sub ${AWS::StackName}-refresh
             ScheduleExpression: !Ref ScheduleExpression
+            State: !Ref ScheduleState
             Description: Refresh presigned URLs in the published manifest.
       Policies:
         - Statement:
-            # ListBucket matters beyond listing: without it S3 returns 403
-            # instead of 404 for missing keys, which breaks the renderer's
-            # skip-missing-photos behavior.
+            # Scoped enumeration for photo selection. Do not assume a prefix
+            # condition also supplies missing-object HEAD visibility.
             - Sid: ListPhotos
               Effect: Allow
               Action: s3:ListBucket
@@ -329,15 +383,34 @@ Resources:
               Condition:
                 StringLike:
                   s3:prefix: !Sub ${PhotosPrefix}*
+            # Exact-key listing only: no bucket-wide enumeration. A scoped
+            # s3:prefix condition is NOT proof that an absent HEAD returns 404;
+            # bootstrap canonical or verify 404 visibility before first publish.
+            - Sid: ListCanonicalManifest
+              Effect: Allow
+              Action: s3:ListBucket
+              Resource: !Sub arn:aws:s3:::${PhotosBucketName}
+              Condition:
+                StringEquals:
+                  s3:prefix: !Ref ManifestKey
+            - Sid: PublicationTransaction
+              Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:ConditionCheckItem
+              Resource: !GetAtt PlaylistTable.Arn
             - Sid: ReadPhotos
               Effect: Allow
               Action: s3:GetObject
               Resource: !Sub arn:aws:s3:::${PhotosBucketName}/${PhotosPrefix}*
-            - Sid: WriteManifest
+            - Sid: ReadWriteManifest
               Effect: Allow
-              Action: s3:PutObject
+              Action:
+                - s3:GetObject
+                - s3:PutObject
               Resource:
                 - !Sub arn:aws:s3:::${PhotosBucketName}/${ManifestKey}
+                - !Sub arn:aws:s3:::${PhotosBucketName}/${ManifestKey}.publications/*
                 - !If
                   - HasLegacyManifestKey
                   - !Sub arn:aws:s3:::${PhotosBucketName}/${LegacyManifestKey}
@@ -411,6 +484,13 @@ Resources:
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized
           TrustedKeyGroups: [!Ref PhotosKeyGroup]
         CacheBehaviors:
+          # Staged manifests contain signed photo URLs, not public artifacts.
+          # Match before unsigned m/*, including m/...json.publications/*.
+          - PathPattern: "*.publications/*"
+            TargetOriginId: photos-s3
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
+            TrustedKeyGroups: [!Ref PhotosKeyGroup]
           # Manifest lives under an unguessable m/<random>/ key: unsigned
           # (frames are dumb pollers) and never cached (frames must see
           # every publish immediately).

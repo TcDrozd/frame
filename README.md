@@ -1,5 +1,10 @@
 # frame
 
+> **Milestone A safety work is not deployed.** Use the [offline checks](docs/milestone-a-ci.md)
+> and [isolated staging/cutover runbook](docs/milestone-a-staging.md).
+> Do not run bare SAM deployment or reuse the production stack as staging.
+> New backend publication requires the [explicit migration prerequisites](apps/frame-dash/src/SAFETY.md).
+
 A shared digital photo frame: family members' photos land in one S3 bucket, a
 curator picks what plays, and tablets and a Pi Zero mounted in different houses
 show the same photo at the same time — and keep showing photos when the network
@@ -51,7 +56,7 @@ an explicit publish restarts the show.
 | `apps/pi-zero-client` | **The native Pi Zero display.** Python + Pillow, local manifest/image cache, direct `/dev/fb0` rendering, and separate viewer/sync systemd units. Source recovered from the live device 2026-08-11; no `install.sh` yet. | Original Pi Zero on an HDMI display |
 | `apps/pi-client` | **Legacy browser host.** Vendored X + Openbox + Chromium kiosk with a URL-switching webhook. It predates the native client, has not been re-verified, and is not what the live Pi Zero runs. | Retained for provenance or stronger Pi hardware |
 | `apps/portal` | Uploads + photo metadata (FastAPI, HTMX, SQLite). Pins/bumps/hides. Its publish path was removed. Slated for retirement once frame-dash grows an upload view. | Home server, `/opt/frame`, Tailscale-only |
-| `tools/` | `s3_rsync.py` (bulk photo ingest), `deploy/` (rsync deploy scripts), `manual-selector/` and `generate_manifest-v1.py` (v1-era helpers), `publish_manifest.py` (retired v1 publisher, break-glass only) | Laptop / server |
+| `tools/` | `s3_rsync.py` (bulk photo ingest), `deploy/` (rsync deploy scripts), `manual-selector/` and `generate_manifest-v1.py` (v1-era helpers), `publish_manifest.py` (retired v1 publisher; an unconditional writer — must not be run once the fenced publisher is live, as it bypasses publication fencing) | Laptop / server |
 | `legacy/` | Archived v1 source, vendored as plain files. Reference only — never deploy from here. See `legacy/README.md` for provenance. | — |
 
 Each app has its own README with the detail: architecture and runbooks in
@@ -92,11 +97,17 @@ managed by the SAM stack; the stack only gets least-privilege IAM against it.
 The bucket policy allows public `s3:GetObject` on the manifest keys only —
 photos stay private and are reachable exclusively through presigned URLs.
 
-`samconfig.toml` pins `ManifestKey=manifest.json`: since the cutover this is a
-single **production** stack, and a plain `sam deploy` writes the manifest the
-frames poll. (The SAM template's own default is still `manifest.dev.json` — a
-pre-cutover safety net that samconfig now overrides.) A test deploy has to opt
-out explicitly with `--parameter-overrides ManifestKey=manifest.dev.json`.
+`samconfig.toml` `[default]`/`[prod]` pin `ManifestKey=manifest.json`: the
+`frame-dash` stack is **production**, and deploying it writes the manifest the
+frames poll. Deploy only through the gated wrappers
+(`apps/frame-dash/scripts/deploy_stack.sh` / `deploy_web.sh`, which require
+`--apply` and, for production, `FRAME_PRODUCTION_INTENT=frame-dash`). Raw
+`sam deploy` bypasses those gates. Overriding the production stack to
+`manifest.dev.json` is **not** a test environment — it stops live refreshes
+and shares production's table and schedule. Test in the separate
+`frame-dash-staging` stack described in
+[docs/milestone-a-staging.md](docs/milestone-a-staging.md), or use a
+non-mutating `dry_run` preview.
 
 Only `ManifestKey`, the profile and the region are pinned in samconfig; the
 rest of the stack parameters — including `PhotoUrlMode` and `AutoPublishMode` —
@@ -135,9 +146,10 @@ months.
 ## Working in this repo
 
 ```bash
-# frame-dash (from apps/frame-dash/)
-sam build && sam deploy          # writes the LIVE manifest.json
-./scripts/deploy_web.sh          # sync SPA to S3 + CloudFront invalidation
+# frame-dash: offline checks; deployment requires the staging/cutover runbook
+python3 tools/safety/run_unittests.py apps/frame-dash/tests
+npm ci --ignore-scripts --prefix apps/frame-dash
+npm run test:web --prefix apps/frame-dash
 
 # portal (from apps/portal/)
 python -m venv venv && source venv/bin/activate && pip install -r requirements.txt

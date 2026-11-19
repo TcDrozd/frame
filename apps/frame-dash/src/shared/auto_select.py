@@ -17,18 +17,22 @@ import random
 from collections import deque
 from datetime import datetime, timezone
 
-from .s3_browse import is_media_key
+from .s3_browse import is_displayable_key
 
 
 def list_media_keys(s3, bucket: str, prefix: str) -> list[str]:
-    """Every media key under prefix (no delimiter — full recursive listing)."""
+    """Every displayable key under prefix (no delimiter — full recursive listing).
+
+    Only formats both frame clients can decode are eligible (see
+    s3_browse.DISPLAYABLE_EXTENSIONS); HEIC/video originals are skipped.
+    """
     keys: list[str] = []
     kwargs: dict = {"Bucket": bucket, "Prefix": prefix}
     while True:
         page = s3.list_objects_v2(**kwargs)
         for item in page.get("Contents", []):
             key = item.get("Key")
-            if key and is_media_key(key):
+            if key and is_displayable_key(key):
                 keys.append(key)
         token = page.get("NextContinuationToken")
         if not token:
